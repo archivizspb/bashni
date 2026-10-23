@@ -87,6 +87,20 @@ button.small {
 button.small:hover { border-color: var(--accent); }
 button.small.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.small.danger { border-color: #c24a3a; color: #c24a3a; }
+.save-form { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.mode { font-size: 11.5px; color: var(--muted); }
+.mode.on::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3f9b5b; margin-right: 5px; vertical-align: 1px; }
+.vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
+.vcard { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.vthumb { display: block; padding: 0; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: var(--scene); cursor: pointer; aspect-ratio: 3 / 4; }
+.vthumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.vthumb:hover { border-color: var(--accent); }
+.vcard.active .vthumb { border: 2px solid var(--accent); }
+.vcard .v-name { font-size: 13px; line-height: 1.25; }
+.vcard.active .v-name { color: var(--accent); }
+.vcard .v-meta { font-size: 11px; line-height: 1.3; }
+.vcard .v-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.vcard .v-actions button { font-size: 11.5px; padding: 3px 7px; }
 .variants { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .variants li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 9px 0; border-top: 1px solid var(--rule); }
 .variants li:last-child { border-bottom: 1px solid var(--rule); }
@@ -132,27 +146,34 @@ button.small.danger { border-color: #c24a3a; color: #c24a3a; }
     </div>
 
     <div class="group" id="lib">
-      <span class="label">Варианты</span>
+      <div class="group-head"><span class="label">Варианты</span><span class="mode" id="v-mode"></span></div>
       <div class="shared" id="tg-note" hidden>
-        <span>Страница открыта внутри Telegram — он может стереть сохранённые варианты. Откройте её в обычном браузере (меню ⋯ → «Открыть в браузере») или храните ссылку на все варианты.</span>
+        <span>Страница открыта внутри Telegram, а общая библиотека сейчас недоступна — Telegram может стереть варианты, сохранённые только здесь. Откройте страницу в обычном браузере (меню ⋯ → «Открыть в браузере»).</span>
       </div>
       <div class="shared" id="shared" hidden>
         <span id="shared-text"></span>
-        <button class="small" id="shared-save">Сохранить к себе</button>
+        <button class="small" id="shared-save">Добавить в библиотеку</button>
       </div>
-      <form class="save-row" id="save-form">
+      <form class="save-form" id="save-form">
         <input type="text" id="v-name" maxlength="60" placeholder="Название варианта" autocomplete="off">
-        <button type="submit" class="small primary" id="v-save">Сохранить</button>
+        <div class="save-row">
+          <input type="text" id="v-author" maxlength="40" placeholder="Ваше имя" autocomplete="nickname">
+          <button type="submit" class="small primary" id="v-save">Сохранить</button>
+        </div>
       </form>
-      <ul class="variants" id="v-list"></ul>
+      <div class="vgrid" id="v-grid"></div>
       <p class="note" id="v-empty">Пока пусто. Настройте форму ползунками и сохраните — вариант появится здесь.</p>
       <div class="link-row">
         <button class="small" id="v-link-current">Ссылка на текущую форму</button>
         <button class="small" id="v-link-all" hidden>Ссылка на все варианты</button>
       </div>
       <input type="text" id="v-link-box" readonly hidden aria-label="Ссылка на вариант">
+      <form class="save-row" id="admin-form" hidden>
+        <input type="password" id="admin-key" placeholder="Ключ владельца" autocomplete="off">
+        <button type="submit" class="small">Запомнить</button>
+      </form>
       <p class="note" id="v-status" role="status"></p>
-      <p class="note">Варианты хранятся в этом браузере. Чтобы показать вариант, скопируйте ссылку и отправьте её: по ней откроется ровно эта форма. «Ссылка на все варианты» переносит всю библиотеку — её можно отправить целиком или сохранить себе как резервную копию.</p>
+      <p class="note" id="v-help"></p>
     </div>
 
     <div class="group" id="params">
@@ -438,24 +459,23 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
 
   let model = new THREE.Group(), crowns = [], floors = [];
   scene.add(model);
-  function rebuild() {
-    const r = TowerGeom.build(P);
-    scene.remove(model);
-    model.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
-    model = new THREE.Group(); crowns = []; floors = [];
+  function buildModel(p, withLines) {
+    const r = TowerGeom.build(p);
+    const group = new THREE.Group(), cr = [], fl = [];
     r.towers.forEach((t, ti) => {
       const m = ti === 0 ? MAT.t1 : MAT.t2;
       const outerR = t.body.map((s) => ({ pts: s.outer, z: s.z }));
       const innerR = t.body.map((s) => ({ pts: s.inner, z: s.z }));
       const top = t.body[t.body.length - 1];
-      model.add(toMesh([stripMesh(outerR), stripMesh(innerR), capMesh(ring(t.body[0]), 0), capMesh(ring(top), top.z)], m));
+      group.add(toMesh([stripMesh(outerR), stripMesh(innerR), capMesh(ring(t.body[0]), 0), capMesh(ring(top), top.z)], m));
       if (t.crown.length > 1) {
         const zf = t.crown.planeZ ? (q, z) => Math.min(z, t.crown.planeZ(q[0], q[1])) : null;
         const cO = t.crown.map((s) => ({ pts: s.outer, z: s.z })), cI = t.crown.map((s) => ({ pts: s.inner, z: s.z }));
         const ct = t.crown[t.crown.length - 1];
         const cm = toMesh([stripMesh(cO, null, zf), stripMesh(cI, null, zf), capMesh(ring(ct), ct.z, zf)], MAT.crown);
-        crowns.push(cm); model.add(cm);
+        cr.push(cm); group.add(cm);
       }
+      if (!withLines) return;
       const lp = [];
       t.floors.forEach((s) => {
         const pts = ring(s);
@@ -465,15 +485,23 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
         }
       });
       const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
-      const ls = new THREE.LineSegments(lg, lineMat); floors.push(ls); model.add(ls);
+      const ls = new THREE.LineSegments(lg, lineMat); fl.push(ls); group.add(ls);
     });
-    if (P.Podium > 0) {
+    if (p.Podium > 0) {
       const b = r.base.concat([r.base[0]]);
-      model.add(toMesh([stripMesh([{ pts: b, z: 0 }, { pts: b, z: P.Podium }]), capMesh(r.base, P.Podium), capMesh(r.base, 0)], MAT.base));
+      group.add(toMesh([stripMesh([{ pts: b, z: 0 }, { pts: b, z: p.Podium }]), capMesh(r.base, p.Podium), capMesh(r.base, 0)], MAT.base));
     }
+    return { group, crowns: cr, floors: fl, stats: r.stats };
+  }
+  const disposeGroup = (g) => g.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+  function rebuild() {
+    scene.remove(model);
+    disposeGroup(model);
+    const b = buildModel(P, true);
+    model = b.group; crowns = b.crowns; floors = b.floors;
     scene.add(model);
     applyToggles();
-    showStats(r.stats);
+    showStats(b.stats);
   }
 
   const fmt = (v, d = 0) => v.toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -514,23 +542,21 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     schedule();
   });
 
-  // ---------- варианты: библиотека в браузере и ссылки
+  // ---------- варианты: общая библиотека на сервере (у всех сразу); без связи — только в этом браузере
   const SITE = 'https://archivizspb.github.io/bashni/';
-  const LIB_KEY = 'bashni-variants-v1';
-  let memoryLib = null;  // если хранилище браузера недоступно, библиотека живёт до закрытия вкладки
-  let activeId = null, incoming = null;
+  const API = 'https://64-188-62-43.sslip.io:8443/api/variants';
+  const LOCAL_KEY = 'bashni-variants-v1';
   const $ = (id) => document.getElementById(id);
-  function readLib() {
-    if (memoryLib) return memoryLib;
-    try { const v = JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); return Array.isArray(v) ? v : []; }
-    catch (e) { memoryLib = []; return memoryLib; }
-  }
-  function writeLib(list) {
-    if (memoryLib) { memoryLib = list; return true; }
-    try { localStorage.setItem(LIB_KEY, JSON.stringify(list)); return true; }
-    catch (e) { memoryLib = list; status('Браузер не даёт хранить данные: варианты пропадут после закрытия вкладки.'); return false; }
-  }
-  // в варианте храним только отличия от исходной формы
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  };
+  let mode = 'loading';  // 'shared' — общий сервер, 'local' — этот браузер
+  let variants = [], listSig = '', activeId = null, incoming = null;
+  const keys = store.get('bashni-keys-v1', {});  // id -> ключ удаления своих вариантов
+  let adminKey = store.get('bashni-admin-key', '');
+  $('v-author').value = store.get('bashni-author', '');
+
   function diffParams() {
     const d = {};
     Object.keys(TowerGeom.DEFAULTS).forEach((k) => { if (Math.abs(P[k] - TowerGeom.DEFAULTS[k]) > 1e-9) d[k] = +P[k].toFixed(4); });
@@ -555,87 +581,207 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     } catch (e) { return null; }
   }
   const cleanVariant = (v) => (v && typeof v === 'object' && v.p && typeof v.p === 'object'
-    ? { name: String(v.n || 'Вариант').slice(0, 60), params: v.p, created: +v.c || Date.now() } : null);
-  const linkFor = (name, params) => SITE + '#v=' + encodeObj({ n: name, p: params });
-  const linkAll = () => SITE + '#lib=' + encodeObj({ l: readLib().map((v) => ({ n: v.name, p: v.params, c: v.created })) });
+    ? { name: String(v.n || 'Вариант').slice(0, 60), author: String(v.a || '').slice(0, 40), params: v.p, created: +v.c || Date.now() } : null);
+  const linkFor = (v) => SITE + '#v=' + encodeObj({ n: v.name, a: v.author || '', p: v.params });
+  const linkAll = () => SITE + '#lib=' + encodeObj({ l: variants.map((v) => ({ n: v.name, a: v.author || '', p: v.params, c: v.created })) });
   let statusTimer = 0;
   function status(text) {
     $('v-status').textContent = text;
     clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => { $('v-status').textContent = ''; }, 5000);
+    statusTimer = setTimeout(() => { $('v-status').textContent = ''; }, 6000);
   }
   function copyLink(url) {
     const box = $('v-link-box');
     box.value = url; box.hidden = false;
     const fallback = () => { box.focus(); box.select(); status('Ссылка выделена — скопируйте её (Ctrl+C или «Копировать»).'); };
-    try {
-      navigator.clipboard.writeText(url).then(() => status('Ссылка скопирована — отправьте её в Telegram.'), fallback);
-    } catch (e) { fallback(); }
+    try { navigator.clipboard.writeText(url).then(() => status('Ссылка скопирована — её можно отправить в Telegram.'), fallback); }
+    catch (e) { fallback(); }
   }
   const summary = (params) => {
     const v = Object.assign({}, TowerGeom.DEFAULTS, params);
     const bulge = v.Bulge ? ` · ${v.Bulge > 0 ? '+' : ''}${Math.round(v.Bulge * 100)}% на ${Math.round(v.BulgeZ)} м` : '';
-    return `${Math.round(v.H1)}/${Math.round(v.H2)} м · закрутка ${Math.round(v.Twist)}° · разрыв ${Math.round(v.Gap)} м${bulge}`;
+    return `${Math.round(v.H1)}/${Math.round(v.H2)} м · ${Math.round(v.Twist)}° · разрыв ${Math.round(v.Gap)}${bulge}`;
   };
   const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+  // превью: та же модель, отрисованная отдельным маленьким рендерером в аксонометрии
+  thumbCache = new Map();
+  let thumbR = null, thumbQueue = Promise.resolve();
+  const thumbScene = new THREE.Scene(), thumbCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -4000, 8000);
+  thumbScene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f96, 0.8));
+  const tSun = new THREE.DirectionalLight(0xffffff, 0.8); tSun.position.set(300, 500, 200); thumbScene.add(tSun);
+  function renderThumb(params) {
+    if (!thumbR) {
+      thumbR = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      thumbR.setPixelRatio(1); thumbR.setSize(240, 320, false);
+    }
+    const built = buildModel(Object.assign({}, TowerGeom.DEFAULTS, params), false);
+    thumbScene.background = new THREE.Color(css('--scene') || '#9aa1aa');
+    thumbScene.add(built.group);
+    fitOrtho(thumbCam, new THREE.Box3().setFromObject(built.group), [1, 1.15, 1], 240 / 320, 1.05);
+    thumbR.render(thumbScene, thumbCam);
+    const url = thumbR.domElement.toDataURL('image/jpeg', 0.86);
+    thumbScene.remove(built.group); disposeGroup(built.group);
+    return url;
+  }
+  function thumbFor(params) {
+    const k = JSON.stringify(params);
+    if (!thumbCache.has(k)) {
+      thumbQueue = thumbQueue.then(() => new Promise((res) => setTimeout(() => { try { res(renderThumb(params)); } catch (e) { res(''); } }, 0)));
+      thumbCache.set(k, thumbQueue);
+    }
+    return thumbCache.get(k);
+  }
+
+  const canDelete = (v) => mode === 'local' || !!keys[v.id] || !!adminKey;
   function renderLib() {
-    const list = readLib(), ul = $('v-list');
-    ul.textContent = '';
-    $('v-empty').hidden = list.length > 0;
-    $('v-link-all').hidden = list.length === 0;
-    list.slice().sort((a, b) => b.created - a.created).forEach((v) => {
-      const li = document.createElement('li');
-      if (v.id === activeId) li.className = 'active';
+    const grid = $('v-grid');
+    grid.textContent = '';
+    $('v-empty').hidden = variants.length > 0;
+    $('v-link-all').hidden = variants.length === 0;
+    variants.forEach((v) => {
+      const card = document.createElement('div');
+      card.className = 'vcard' + (v.id === activeId ? ' active' : '');
+      const open = document.createElement('button');
+      open.type = 'button'; open.className = 'vthumb'; open.title = 'Открыть «' + v.name + '»';
+      open.setAttribute('aria-label', 'Открыть вариант «' + v.name + '»');
+      const img = document.createElement('img'); img.alt = ''; img.width = 120; img.height = 160;
+      thumbFor(v.params).then((url) => { if (url) img.src = url; });
+      open.appendChild(img);
+      open.addEventListener('click', () => { applyParams(v.params); activeId = v.id; renderLib(); status('Открыт вариант «' + v.name + '».'); });
       const name = document.createElement('span'); name.className = 'v-name'; name.textContent = v.name;
-      const meta = document.createElement('span'); meta.className = 'v-meta'; meta.textContent = summary(v.params) + ' · ' + when(v.created);
+      const meta = document.createElement('span'); meta.className = 'v-meta';
+      meta.textContent = (v.author ? v.author + ' · ' : '') + when(v.created) + ' · ' + summary(v.params);
       const act = document.createElement('div'); act.className = 'v-actions';
-      const btn = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'small' + (cls ? ' ' + cls : ''); b.textContent = label; b.addEventListener('click', fn); act.appendChild(b); return b; };
-      btn('Открыть', 'primary', () => { applyParams(v.params); activeId = v.id; renderLib(); status('Открыт вариант «' + v.name + '».'); });
-      btn('Ссылка', '', () => copyLink(linkFor(v.name, v.params)));
-      const del = btn('Удалить', '', () => {
-        if (del.dataset.armed) {
-          writeLib(readLib().filter((x) => x.id !== v.id));
-          if (activeId === v.id) activeId = null;
-          renderLib(); status('Вариант «' + v.name + '» удалён.');
-        } else {
-          del.dataset.armed = '1'; del.textContent = 'Точно удалить?'; del.classList.add('danger');
-          setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Удалить'; del.classList.remove('danger'); } }, 4000);
-        }
-      });
-      li.append(name, meta, act);
-      ul.appendChild(li);
+      const btn = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'small'; b.textContent = label; b.addEventListener('click', fn); act.appendChild(b); return b; };
+      btn('Ссылка', () => copyLink(linkFor(v)));
+      if (canDelete(v)) {
+        const del = btn('Удалить', () => {
+          if (!del.dataset.armed) {
+            del.dataset.armed = '1'; del.textContent = 'Точно?'; del.classList.add('danger');
+            setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Удалить'; del.classList.remove('danger'); } }, 4000);
+            return;
+          }
+          removeVariant(v);
+        });
+      }
+      card.append(open, name, meta, act);
+      grid.appendChild(card);
     });
   }
-  function addVariant(name, params, created) {
-    const list = readLib();
-    const v = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), name, created: created || Date.now(), params };
-    list.push(v); writeLib(list); activeId = v.id; renderLib();
+  function setList(list) {
+    const sorted = list.slice().sort((a, b) => b.created - a.created);
+    const sig = JSON.stringify(sorted.map((v) => [v.id, v.name, v.author, v.params]));
+    variants = sorted;
+    if (sig !== listSig) { listSig = sig; renderLib(); }
+  }
+  function showMode() {
+    const m = $('v-mode');
+    m.textContent = mode === 'shared' ? 'общая' : mode === 'local' ? 'только в этом браузере' : 'подключение…';
+    m.classList.toggle('on', mode === 'shared');
+    $('v-help').textContent = mode === 'shared'
+      ? 'Варианты видят все, кто открыл сайт, список обновляется сам. Удалить вариант может тот, кто его сохранил. Ссылкой можно отправить вариант или всю библиотеку.'
+      : 'Общая библиотека сейчас недоступна, поэтому варианты сохраняются только в этом браузере. Чтобы показать вариант, отправьте ссылку на него.';
+    $('tg-note').hidden = !(mode === 'local' && (window.TelegramWebviewProxy || /Telegram/i.test(navigator.userAgent)));
+  }
+
+  async function api(method, path, body, key) {
+    const headers = {};
+    if (body) headers['Content-Type'] = 'application/json';
+    if (key) headers['X-Key'] = key;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000);
+    try {
+      const r = await fetch(API + (path || ''), { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store', signal: ctl.signal });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { const e = new Error(data.error || String(r.status)); e.code = data.error || String(r.status); throw e; }
+      return data;
+    } finally { clearTimeout(timer); }
+  }
+  async function refresh() {
+    if (mode === 'local') return;
+    try {
+      const d = await api('GET');
+      mode = 'shared';
+      setList(Array.isArray(d.variants) ? d.variants : []);
+    } catch (e) {
+      if (mode === 'loading') { mode = 'local'; setList(store.get(LOCAL_KEY, [])); }
+      else console.error('Библиотека вариантов:', e);
+    }
+    showMode();
+  }
+  const failText = (e) => ({
+    rate_limited: 'Слишком много сохранений подряд — подождите немного.',
+    library_full: 'Библиотека заполнена — удалите старые варианты.',
+    forbidden: 'Удалить этот вариант может только тот, кто его сохранил.'
+  })[e && e.code] || 'Не получилось — сервер не ответил. Попробуйте ещё раз.';
+
+  async function addVariant(name, author, params, created) {
+    if (mode === 'shared') {
+      const v = await api('POST', '', { name, author, params });
+      keys[v.id] = v.key; store.set('bashni-keys-v1', keys);
+      delete v.key;
+      setList(variants.concat([v]));
+      return v;
+    }
+    const v = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), name, author, created: created || Date.now(), params };
+    const list = store.get(LOCAL_KEY, []).concat([v]);
+    if (!store.set(LOCAL_KEY, list)) status('Браузер не даёт хранить данные: вариант пропадёт после закрытия вкладки.');
+    setList(list);
     return v;
   }
-  $('save-form').addEventListener('submit', (e) => {
+  async function removeVariant(v) {
+    try {
+      if (mode === 'shared') {
+        await api('DELETE', '/' + encodeURIComponent(v.id), null, keys[v.id] || adminKey);
+        delete keys[v.id]; store.set('bashni-keys-v1', keys);
+        setList(variants.filter((x) => x.id !== v.id));
+      } else {
+        const list = store.get(LOCAL_KEY, []).filter((x) => x.id !== v.id);
+        store.set(LOCAL_KEY, list); setList(list);
+      }
+      if (activeId === v.id) activeId = null;
+      status('Вариант «' + v.name + '» удалён.');
+    } catch (e) { status(failText(e)); }
+  }
+
+  $('save-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const input = $('v-name');
-    const name = input.value.trim() || 'Вариант ' + (readLib().length + 1);
-    addVariant(name, diffParams());
-    input.value = '';
-    status('Сохранено: «' + name + '».');
+    const name = $('v-name').value.trim() || 'Вариант ' + (variants.length + 1);
+    const author = $('v-author').value.trim();
+    store.set('bashni-author', author);
+    const btn = $('v-save'); btn.disabled = true;
+    try {
+      const v = await addVariant(name, author, diffParams());
+      activeId = v.id; renderLib();
+      $('v-name').value = '';
+      status(mode === 'shared' ? 'Сохранено в общую библиотеку: «' + name + '».' : 'Сохранено в этом браузере: «' + name + '».');
+    } catch (err) { console.error('Сохранение варианта:', err); status(failText(err)); }
+    finally { btn.disabled = false; }
   });
-  $('v-link-current').addEventListener('click', () => copyLink(linkFor($('v-name').value.trim() || 'Вариант', diffParams())));
+  $('v-link-current').addEventListener('click', () => copyLink(linkFor({ name: $('v-name').value.trim() || 'Вариант', author: $('v-author').value.trim(), params: diffParams() })));
   $('v-link-all').addEventListener('click', () => copyLink(linkAll()));
-  $('shared-save').addEventListener('click', () => {
+  $('shared-save').addEventListener('click', async () => {
     if (!incoming) return;
-    // одинаковые варианты (то же имя и те же параметры) второй раз не добавляем
-    const have = new Set(readLib().map((v) => v.name + '|' + JSON.stringify(v.params)));
+    const have = new Set(variants.map((v) => v.name + '|' + JSON.stringify(v.params)));
     let added = 0;
-    incoming.forEach((v) => {
-      if (have.has(v.name + '|' + JSON.stringify(v.params))) return;
-      addVariant(v.name, v.params, v.created); added++;
-    });
-    $('shared').hidden = true;
-    status(added ? 'Добавлено к вам: ' + added + '.' : 'Эти варианты у вас уже есть.');
-    incoming = null;
+    try {
+      for (const v of incoming) {
+        if (have.has(v.name + '|' + JSON.stringify(v.params))) continue;
+        await addVariant(v.name, v.author, v.params, v.created); added++;
+      }
+      $('shared').hidden = true; incoming = null;
+      status(added ? 'Добавлено в библиотеку: ' + added + '.' : 'Эти варианты уже есть в библиотеке.');
+    } catch (err) { status(failText(err)); }
+  });
+  $('admin-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    adminKey = $('admin-key').value.trim();
+    store.set('bashni-admin-key', adminKey);
+    $('admin-form').hidden = true; renderLib();
+    status(adminKey ? 'Ключ владельца запомнен — можно удалять любые варианты.' : 'Ключ владельца забыт.');
   });
   function openFromHash() {
+    if (location.hash === '#admin') { $('admin-form').hidden = false; return; }
     const m = /^#(v|lib)=([A-Za-z0-9_-]+)$/.exec(location.hash);
     if (!m) return;
     const obj = decodeObj(m[2]);
@@ -646,12 +792,12 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     $('shared-text').textContent = incoming.length === 1
       ? 'Открыт присланный вариант «' + incoming[0].name + '».'
       : 'Прислано вариантов: ' + incoming.length + '. Сейчас показан «' + incoming[0].name + '».';
-    $('shared-save').textContent = incoming.length === 1 ? 'Сохранить к себе' : 'Добавить все к себе';
+    $('shared-save').textContent = incoming.length === 1 ? 'Добавить в библиотеку' : 'Добавить все в библиотеку';
     $('shared').hidden = false;
   }
-  // встроенный браузер Telegram может не сохранять данные между запусками
-  if (window.TelegramWebviewProxy || /Telegram/i.test(navigator.userAgent)) $('tg-note').hidden = false;
   window.addEventListener('hashchange', openFromHash);
+  setInterval(refresh, 20000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
   // график профиля: x — ширина (доля плана), y — высота; точку расширения можно тянуть
   const prof = document.getElementById('profile'), pctx = prof.getContext('2d');
@@ -706,8 +852,10 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   const spin = document.getElementById('t-spin');
   spin.addEventListener('change', () => { ctlP.autoRotate = ctlO.autoRotate = spin.checked; });
 
+  var thumbCache;  // var без значения: объявление поднимается, а Map создаёт блок библиотеки выше
   function applyTheme() {
     if (typeof drawProfile === 'function') drawProfile();
+    if (thumbCache) { thumbCache.clear(); renderLib(); }
     scene.background = new THREE.Color(css('--scene') || '#9aa1aa');
     groundMat.color.set(css('--ground') || '#b9bec5');
     lineMat.color.set(css('--floor-line') || '#2a3036');
@@ -729,22 +877,25 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     w:     { dir: [-1, 0, 0], label: 'Фасад западный', ortho: true }
   };
   const box = () => new THREE.Box3().setFromObject(model);
+  function fitOrtho(cam, b, dirArr, aspect, margin) {
+    const center = b.getCenter(new THREE.Vector3()), dir = new THREE.Vector3(...dirArr).normalize();
+    cam.position.copy(center).addScaledVector(dir, 2000);
+    cam.up.set(0, 1, 0); cam.lookAt(center); cam.updateMatrixWorld();
+    let hw = 0, hh = 0;
+    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) {
+      const q = new THREE.Vector3(x, y, z).applyMatrix4(cam.matrixWorldInverse);
+      hw = Math.max(hw, Math.abs(q.x)); hh = Math.max(hh, Math.abs(q.y));
+    }
+    const half = Math.max(hh, hw / aspect) * margin;
+    cam.left = -half * aspect; cam.right = half * aspect; cam.top = half; cam.bottom = -half; cam.zoom = 1;
+    cam.updateProjectionMatrix();
+    return center;
+  }
   function frame(key) {
     const v = VIEWS[key], b = box(), center = b.getCenter(new THREE.Vector3());
     const dir = new THREE.Vector3(...v.dir).normalize();
-    const corners = [];
-    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) corners.push(new THREE.Vector3(x, y, z));
     if (v.ortho) {
-      ortho.position.copy(center).addScaledVector(dir, 2000);
-      ortho.up.set(0, 1, 0); ortho.lookAt(center);
-      ortho.updateMatrixWorld();
-      const inv = ortho.matrixWorldInverse;
-      let hw = 0, hh = 0;
-      corners.forEach((p) => { const q = p.clone().applyMatrix4(inv); hw = Math.max(hw, Math.abs(q.x)); hh = Math.max(hh, Math.abs(q.y)); });
-      const aspect = stage.clientWidth / Math.max(stage.clientHeight, 1);
-      const half = Math.max(hh, hw / aspect) * 1.1;
-      ortho.left = -half * aspect; ortho.right = half * aspect; ortho.top = half; ortho.bottom = -half; ortho.zoom = 1;
-      ortho.updateProjectionMatrix();
+      fitOrtho(ortho, b, v.dir, stage.clientWidth / Math.max(stage.clientHeight, 1), 1.1);
       ctlO.target.copy(center);
       use(ortho, ctlO);
     } else {
@@ -782,7 +933,8 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   openFromHash();
   rebuild();
   drawProfile();
-  renderLib();
+  showMode();
+  refresh();
   resize();
   frame('persp');
   renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });

@@ -1,0 +1,12 @@
+# Только сервис вариантов башен. Порт 443 занят VPN (amnezia-xray), поэтому HTTPS на 8443;
+# порт 80 нужен Let's Encrypt для выпуска сертификата.
+{
+	http_port 80
+	https_port 8443
+}
+
+64-188-62-43.sslip.io:8443 {
+	encode gzip
+	reverse_proxy /api/* 127.0.0.1:8790
+	respond / "bashni api" 200
+}

@@ -1,0 +1,21 @@
+[Unit]
+Description=Bashni Lensiti variants library API (archivizspb.github.io/bashni)
+After=network.target
+
+[Service]
+User=bashni
+Group=bashni
+ExecStart=/usr/bin/python3 /opt/bashni-api/server.py
+Environment=BASHNI_DATA=/var/lib/bashni-api/variants.json
+Environment=BASHNI_ADMIN_KEY=/etc/bashni-api/admin.key
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/bashni-api
+MemoryMax=80M
+
+[Install]
+WantedBy=multi-user.target
