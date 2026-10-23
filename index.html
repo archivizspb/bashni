@@ -32,6 +32,7 @@
   --accent: #e08a3c; --scene: #3a4048; --ground: #4a5058; --floor-line: #10141a; color-scheme: dark;
 }
 html, body { height: 100%; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.45;
@@ -74,6 +75,28 @@ dt { color: var(--muted); }
 dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
 .note { font-size: 12.5px; color: var(--muted); margin: 0; }
+.save-row { display: flex; gap: 6px; margin: 0; }
+.save-row input, #v-link-box {
+  flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 7px 9px; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--bg); color: var(--fg);
+}
+#v-link-box { font-family: var(--font-mono); font-size: 12px; width: 100%; box-sizing: border-box; }
+button.small {
+  font-size: 13px; padding: 7px 10px; border: 1px solid var(--rule); background: var(--bg); color: var(--fg); border-radius: 4px; cursor: pointer;
+}
+button.small:hover { border-color: var(--accent); }
+button.small.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.small.danger { border-color: #c24a3a; color: #c24a3a; }
+.variants { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.variants li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 9px 0; border-top: 1px solid var(--rule); }
+.variants li:last-child { border-bottom: 1px solid var(--rule); }
+.variants li.active .v-name { color: var(--accent); }
+.v-name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.v-meta { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.v-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.v-actions button { font-size: 12.5px; padding: 4px 9px; }
+.link-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.shared { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--accent); border-radius: 4px; font-size: 13.5px; }
 #profile { width: 100%; height: auto; aspect-ratio: 580 / 380; max-width: 100%; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); touch-action: none; cursor: grab; }
 #profile:active { cursor: grabbing; }
 @media (max-width: 800px) {
@@ -106,6 +129,30 @@ dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-num
         <button class="view" id="v-w" data-view="w" aria-pressed="false">Запад</button>
       </div>
       <p class="note">Кнопки видов ставят параллельную проекцию; «3D свободно» — перспектива.</p>
+    </div>
+
+    <div class="group" id="lib">
+      <span class="label">Варианты</span>
+      <div class="shared" id="tg-note" hidden>
+        <span>Страница открыта внутри Telegram — он может стереть сохранённые варианты. Откройте её в обычном браузере (меню ⋯ → «Открыть в браузере») или храните ссылку на все варианты.</span>
+      </div>
+      <div class="shared" id="shared" hidden>
+        <span id="shared-text"></span>
+        <button class="small" id="shared-save">Сохранить к себе</button>
+      </div>
+      <form class="save-row" id="save-form">
+        <input type="text" id="v-name" maxlength="60" placeholder="Название варианта" autocomplete="off">
+        <button type="submit" class="small primary" id="v-save">Сохранить</button>
+      </form>
+      <ul class="variants" id="v-list"></ul>
+      <p class="note" id="v-empty">Пока пусто. Настройте форму ползунками и сохраните — вариант появится здесь.</p>
+      <div class="link-row">
+        <button class="small" id="v-link-current">Ссылка на текущую форму</button>
+        <button class="small" id="v-link-all" hidden>Ссылка на все варианты</button>
+      </div>
+      <input type="text" id="v-link-box" readonly hidden aria-label="Ссылка на вариант">
+      <p class="note" id="v-status" role="status"></p>
+      <p class="note">Варианты хранятся в этом браузере. Чтобы показать вариант, скопируйте ссылку и отправьте её: по ней откроется ровно эта форма. «Ссылка на все варианты» переносит всю библиотеку — её можно отправить целиком или сохранить себе как резервную копию.</p>
     </div>
 
     <div class="group" id="params">
@@ -467,6 +514,145 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     schedule();
   });
 
+  // ---------- варианты: библиотека в браузере и ссылки
+  const SITE = 'https://archivizspb.github.io/bashni/';
+  const LIB_KEY = 'bashni-variants-v1';
+  let memoryLib = null;  // если хранилище браузера недоступно, библиотека живёт до закрытия вкладки
+  let activeId = null, incoming = null;
+  const $ = (id) => document.getElementById(id);
+  function readLib() {
+    if (memoryLib) return memoryLib;
+    try { const v = JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); return Array.isArray(v) ? v : []; }
+    catch (e) { memoryLib = []; return memoryLib; }
+  }
+  function writeLib(list) {
+    if (memoryLib) { memoryLib = list; return true; }
+    try { localStorage.setItem(LIB_KEY, JSON.stringify(list)); return true; }
+    catch (e) { memoryLib = list; status('Браузер не даёт хранить данные: варианты пропадут после закрытия вкладки.'); return false; }
+  }
+  // в варианте храним только отличия от исходной формы
+  function diffParams() {
+    const d = {};
+    Object.keys(TowerGeom.DEFAULTS).forEach((k) => { if (Math.abs(P[k] - TowerGeom.DEFAULTS[k]) > 1e-9) d[k] = +P[k].toFixed(4); });
+    return d;
+  }
+  function applyParams(params) {
+    Object.assign(P, TowerGeom.DEFAULTS);
+    Object.keys(params || {}).forEach((k) => { if (k in TowerGeom.DEFAULTS && isFinite(+params[k])) P[k] = +params[k]; });
+    Object.keys(UNITS).forEach((k) => setSlider(k, P[k]));
+    schedule();
+  }
+  function encodeObj(obj) {
+    const bytes = new TextEncoder().encode(JSON.stringify(obj));
+    let bin = ''; bytes.forEach((b) => { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function decodeObj(code) {
+    try {
+      const b64 = code.replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
+      return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))));
+    } catch (e) { return null; }
+  }
+  const cleanVariant = (v) => (v && typeof v === 'object' && v.p && typeof v.p === 'object'
+    ? { name: String(v.n || 'Вариант').slice(0, 60), params: v.p, created: +v.c || Date.now() } : null);
+  const linkFor = (name, params) => SITE + '#v=' + encodeObj({ n: name, p: params });
+  const linkAll = () => SITE + '#lib=' + encodeObj({ l: readLib().map((v) => ({ n: v.name, p: v.params, c: v.created })) });
+  let statusTimer = 0;
+  function status(text) {
+    $('v-status').textContent = text;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { $('v-status').textContent = ''; }, 5000);
+  }
+  function copyLink(url) {
+    const box = $('v-link-box');
+    box.value = url; box.hidden = false;
+    const fallback = () => { box.focus(); box.select(); status('Ссылка выделена — скопируйте её (Ctrl+C или «Копировать»).'); };
+    try {
+      navigator.clipboard.writeText(url).then(() => status('Ссылка скопирована — отправьте её в Telegram.'), fallback);
+    } catch (e) { fallback(); }
+  }
+  const summary = (params) => {
+    const v = Object.assign({}, TowerGeom.DEFAULTS, params);
+    const bulge = v.Bulge ? ` · ${v.Bulge > 0 ? '+' : ''}${Math.round(v.Bulge * 100)}% на ${Math.round(v.BulgeZ)} м` : '';
+    return `${Math.round(v.H1)}/${Math.round(v.H2)} м · закрутка ${Math.round(v.Twist)}° · разрыв ${Math.round(v.Gap)} м${bulge}`;
+  };
+  const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  function renderLib() {
+    const list = readLib(), ul = $('v-list');
+    ul.textContent = '';
+    $('v-empty').hidden = list.length > 0;
+    $('v-link-all').hidden = list.length === 0;
+    list.slice().sort((a, b) => b.created - a.created).forEach((v) => {
+      const li = document.createElement('li');
+      if (v.id === activeId) li.className = 'active';
+      const name = document.createElement('span'); name.className = 'v-name'; name.textContent = v.name;
+      const meta = document.createElement('span'); meta.className = 'v-meta'; meta.textContent = summary(v.params) + ' · ' + when(v.created);
+      const act = document.createElement('div'); act.className = 'v-actions';
+      const btn = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'small' + (cls ? ' ' + cls : ''); b.textContent = label; b.addEventListener('click', fn); act.appendChild(b); return b; };
+      btn('Открыть', 'primary', () => { applyParams(v.params); activeId = v.id; renderLib(); status('Открыт вариант «' + v.name + '».'); });
+      btn('Ссылка', '', () => copyLink(linkFor(v.name, v.params)));
+      const del = btn('Удалить', '', () => {
+        if (del.dataset.armed) {
+          writeLib(readLib().filter((x) => x.id !== v.id));
+          if (activeId === v.id) activeId = null;
+          renderLib(); status('Вариант «' + v.name + '» удалён.');
+        } else {
+          del.dataset.armed = '1'; del.textContent = 'Точно удалить?'; del.classList.add('danger');
+          setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Удалить'; del.classList.remove('danger'); } }, 4000);
+        }
+      });
+      li.append(name, meta, act);
+      ul.appendChild(li);
+    });
+  }
+  function addVariant(name, params, created) {
+    const list = readLib();
+    const v = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), name, created: created || Date.now(), params };
+    list.push(v); writeLib(list); activeId = v.id; renderLib();
+    return v;
+  }
+  $('save-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = $('v-name');
+    const name = input.value.trim() || 'Вариант ' + (readLib().length + 1);
+    addVariant(name, diffParams());
+    input.value = '';
+    status('Сохранено: «' + name + '».');
+  });
+  $('v-link-current').addEventListener('click', () => copyLink(linkFor($('v-name').value.trim() || 'Вариант', diffParams())));
+  $('v-link-all').addEventListener('click', () => copyLink(linkAll()));
+  $('shared-save').addEventListener('click', () => {
+    if (!incoming) return;
+    // одинаковые варианты (то же имя и те же параметры) второй раз не добавляем
+    const have = new Set(readLib().map((v) => v.name + '|' + JSON.stringify(v.params)));
+    let added = 0;
+    incoming.forEach((v) => {
+      if (have.has(v.name + '|' + JSON.stringify(v.params))) return;
+      addVariant(v.name, v.params, v.created); added++;
+    });
+    $('shared').hidden = true;
+    status(added ? 'Добавлено к вам: ' + added + '.' : 'Эти варианты у вас уже есть.');
+    incoming = null;
+  });
+  function openFromHash() {
+    const m = /^#(v|lib)=([A-Za-z0-9_-]+)$/.exec(location.hash);
+    if (!m) return;
+    const obj = decodeObj(m[2]);
+    const list = m[1] === 'v' ? [cleanVariant(obj)] : (obj && Array.isArray(obj.l) ? obj.l.map(cleanVariant) : []);
+    incoming = list.filter(Boolean).slice(0, 200);
+    if (!incoming.length) { incoming = null; status('Ссылка повреждена — попросите прислать её ещё раз.'); return; }
+    applyParams(incoming[0].params);
+    $('shared-text').textContent = incoming.length === 1
+      ? 'Открыт присланный вариант «' + incoming[0].name + '».'
+      : 'Прислано вариантов: ' + incoming.length + '. Сейчас показан «' + incoming[0].name + '».';
+    $('shared-save').textContent = incoming.length === 1 ? 'Сохранить к себе' : 'Добавить все к себе';
+    $('shared').hidden = false;
+  }
+  // встроенный браузер Telegram может не сохранять данные между запусками
+  if (window.TelegramWebviewProxy || /Telegram/i.test(navigator.userAgent)) $('tg-note').hidden = false;
+  window.addEventListener('hashchange', openFromHash);
+
   // график профиля: x — ширина (доля плана), y — высота; точку расширения можно тянуть
   const prof = document.getElementById('profile'), pctx = prof.getContext('2d');
   const PX = { l: 76, r: 20, t: 18, b: 40 }, SMIN = 0.4, SMAX = 2.1;
@@ -593,8 +779,10 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   }
   new ResizeObserver(resize).observe(stage);
 
+  openFromHash();
   rebuild();
   drawProfile();
+  renderLib();
   resize();
   frame('persp');
   renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
