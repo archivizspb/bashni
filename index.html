@@ -60,6 +60,9 @@ button.view, button.reset {
   font-size: 13px; padding: 7px 4px; border: 1px solid var(--rule); background: var(--bg); color: var(--fg); border-radius: 4px; cursor: pointer;
 }
 button.reset { padding: 3px 8px; font-size: 12px; }
+.head-btns { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+button:disabled { opacity: 0.45; cursor: default; }
+button.reset#undo:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 button.view.wide { grid-column: span 2; }
 button.view:hover, button.reset:hover { border-color: var(--accent); }
 button.view[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -177,7 +180,8 @@ button.small.danger { border-color: #c24a3a; color: #c24a3a; }
     </div>
 
     <div class="group" id="params">
-      <div class="group-head"><span class="label">Форма</span><button class="reset" id="reset">Сбросить</button></div>
+      <div class="group-head"><span class="label">Форма</span>
+        <span class="head-btns"><button class="reset" id="undo" disabled>Сбросить изменения</button><button class="reset" id="reset">Исходная форма</button></span></div>
       <div class="slider"><label for="p-H1">Высота башни 1</label><output id="o-H1"></output><input type="range" id="p-H1" min="150" max="500" step="5"></div>
       <div class="slider"><label for="p-H2">Высота башни 2</label><output id="o-H2"></output><input type="range" id="p-H2" min="100" max="500" step="5"></div>
       <div class="slider"><label for="p-Twist">Закрутка разрыва</label><output id="o-Twist"></output><input type="range" id="p-Twist" min="-120" max="120" step="1"></div>
@@ -522,7 +526,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     BulgeZ: [' м', 0, 1], Bulge: [' %', 0, 0.01], L: [' м', 0, 1], W: [' м', 0, 1], Inset: [' м', 1, 1],
     CrownSlope: ['°', 0, 1], Podium: [' м', 1, 1] };
   let pending = false;
-  const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; rebuild(); drawProfile(); }); } };
+  const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; rebuild(); drawProfile(); updateUndo(); }); } };
   const showOut = (k) => {
     const v = +document.getElementById('p-' + k).value, u = UNITS[k];
     document.getElementById('o-' + k).textContent = (k === 'Bulge' && v > 0 ? '+' : '') + fmt(v, u[1]) + u[0];
@@ -539,6 +543,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   document.getElementById('reset').addEventListener('click', () => {
     Object.assign(P, TowerGeom.DEFAULTS);
     Object.keys(UNITS).forEach((k) => setSlider(k, P[k]));
+    activeId = null; setBaseline({}); renderLib();
     schedule();
   });
 
@@ -568,6 +573,27 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     Object.keys(UNITS).forEach((k) => setSlider(k, P[k]));
     schedule();
   }
+  let baseline = {};
+  function normParams(o) {
+    const r = {};
+    Object.keys(o || {}).sort().forEach((k) => {
+      if (!(k in TowerGeom.DEFAULTS)) return;
+      const v = +(+o[k]).toFixed(4);
+      if (Math.abs(v - TowerGeom.DEFAULTS[k]) > 1e-9) r[k] = v;
+    });
+    return r;
+  }
+  function setBaseline(params) { baseline = normParams(params); updateUndo(); }
+  function updateUndo() {
+    const changed = JSON.stringify(normParams(diffParams())) !== JSON.stringify(baseline);
+    const u = $('undo');
+    u.disabled = !changed;
+    u.title = changed ? (activeId ? 'Вернуть открытый вариант' : 'Вернуть форму, с которой начали') : 'Изменений нет';
+  }
+  $('undo').addEventListener('click', () => {
+    applyParams(baseline);
+    status(activeId ? 'Изменения сброшены — снова открытый вариант.' : 'Изменения сброшены.');
+  });
   function encodeObj(obj) {
     const bytes = new TextEncoder().encode(JSON.stringify(obj));
     let bin = ''; bytes.forEach((b) => { bin += String.fromCharCode(b); });
@@ -648,7 +674,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
       const img = document.createElement('img'); img.alt = ''; img.width = 120; img.height = 160;
       thumbFor(v.params).then((url) => { if (url) img.src = url; });
       open.appendChild(img);
-      open.addEventListener('click', () => { applyParams(v.params); activeId = v.id; renderLib(); status('Открыт вариант «' + v.name + '».'); });
+      open.addEventListener('click', () => { applyParams(v.params); activeId = v.id; setBaseline(v.params); renderLib(); status('Открыт вариант «' + v.name + '».'); });
       const name = document.createElement('span'); name.className = 'v-name'; name.textContent = v.name;
       const meta = document.createElement('span'); meta.className = 'v-meta';
       meta.textContent = (v.author ? v.author + ' · ' : '') + when(v.created) + ' · ' + summary(v.params);
@@ -752,7 +778,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     const btn = $('v-save'); btn.disabled = true;
     try {
       const v = await addVariant(name, author, diffParams());
-      activeId = v.id; renderLib();
+      activeId = v.id; setBaseline(v.params); renderLib();
       $('v-name').value = '';
       status(mode === 'shared' ? 'Сохранено в общую библиотеку: «' + name + '».' : 'Сохранено в этом браузере: «' + name + '».');
     } catch (err) { console.error('Сохранение варианта:', err); status(failText(err)); }
@@ -789,6 +815,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     incoming = list.filter(Boolean).slice(0, 200);
     if (!incoming.length) { incoming = null; status('Ссылка повреждена — попросите прислать её ещё раз.'); return; }
     applyParams(incoming[0].params);
+    setBaseline(incoming[0].params);
     $('shared-text').textContent = incoming.length === 1
       ? 'Открыт присланный вариант «' + incoming[0].name + '».'
       : 'Прислано вариантов: ' + incoming.length + '. Сейчас показан «' + incoming[0].name + '».';
