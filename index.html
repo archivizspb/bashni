@@ -1,0 +1,514 @@
+<meta charset="utf-8">
+<title>Башни «Ленсити»</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Раскладка: слева сцена, справа панель — виды, ползунки формы, показатели; на телефоне панель уходит под сцену */
+:root {
+  --bg: #e9ecef;
+  --panel: #f7f8f9;
+  --fg: #1d2329;
+  --muted: #5d6873;
+  --rule: #cfd5db;
+  --accent: #c9711f;
+  --scene: #9aa1aa;
+  --ground: #b9bec5;
+  --floor-line: #2a3036;
+  --font-body: "Golos Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14181c; --panel: #1b2026; --fg: #e3e7eb; --muted: #97a1ab; --rule: #2c333a;
+    --accent: #e08a3c; --scene: #3a4048; --ground: #4a5058; --floor-line: #10141a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14181c; --panel: #1b2026; --fg: #e3e7eb; --muted: #97a1ab; --rule: #2c333a;
+  --accent: #e08a3c; --scene: #3a4048; --ground: #4a5058; --floor-line: #10141a; color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px;
+}
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 14px; }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
+#stage { position: relative; min-height: 460px; border-radius: 6px; overflow: hidden; background: var(--scene); }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hint { position: absolute; left: 10px; right: 10px; bottom: 10px; font-size: 12px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.45); pointer-events: none; }
+.badge {
+  position: absolute; top: 10px; left: 10px; font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 3px;
+  background: rgba(20, 24, 28, .55); color: #fff; pointer-events: none;
+}
+aside { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 18px; min-width: 0; overflow: auto; }
+.group { display: flex; flex-direction: column; gap: 9px; }
+.group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.views { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+button { font: inherit; }
+button.view, button.reset {
+  font-size: 13px; padding: 7px 4px; border: 1px solid var(--rule); background: var(--bg); color: var(--fg); border-radius: 4px; cursor: pointer;
+}
+button.reset { padding: 3px 8px; font-size: 12px; }
+button.view.wide { grid-column: span 2; }
+button.view:hover, button.reset:hover { border-color: var(--accent); }
+button.view[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; }
+.slider label { font-size: 13.5px; }
+.slider output { font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+.toggles label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.toggles input { accent-color: var(--accent); width: 16px; height: 16px; }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13.5px; }
+dt { color: var(--muted); }
+dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+.note { font-size: 12.5px; color: var(--muted); margin: 0; }
+@media (max-width: 800px) {
+  main { grid-template-columns: 1fr; }
+  #stage { min-height: 0; height: 62vh; }
+  aside { overflow: visible; }
+}
+</style>
+
+<header>
+  <h1>Башни «Ленсити»</h1>
+  <span class="sub">Конкурс «Взгляд в будущее», Кудрово · рабочая модель 23.10.2026</span>
+</header>
+<main>
+  <div id="stage">
+    <span class="badge" id="badge">Перспектива</span>
+    <div class="hint">Вращать — перетащить · приблизить — колесо или щипок · сдвинуть — правая кнопка или два пальца</div>
+  </div>
+  <aside>
+    <div class="group">
+      <span class="label">Вид</span>
+      <div class="views" role="group" aria-label="Вид">
+        <button class="view wide" id="v-persp" data-view="persp" aria-pressed="true">3D свободно</button>
+        <button class="view wide" id="v-axo" data-view="axo" aria-pressed="false">Аксонометрия</button>
+        <button class="view" id="v-top" data-view="top" aria-pressed="false">Сверху</button>
+        <button class="view" id="v-bot" data-view="bot" aria-pressed="false">Снизу</button>
+        <button class="view" id="v-s" data-view="s" aria-pressed="false">Юг</button>
+        <button class="view" id="v-e" data-view="e" aria-pressed="false">Восток</button>
+        <button class="view" id="v-n" data-view="n" aria-pressed="false">Север</button>
+        <button class="view" id="v-w" data-view="w" aria-pressed="false">Запад</button>
+      </div>
+      <p class="note">Кнопки видов ставят параллельную проекцию; «3D свободно» — перспектива.</p>
+    </div>
+
+    <div class="group" id="params">
+      <div class="group-head"><span class="label">Форма</span><button class="reset" id="reset">Сбросить</button></div>
+      <div class="slider"><label for="p-H1">Высота башни 1</label><output id="o-H1"></output><input type="range" id="p-H1" min="150" max="500" step="5"></div>
+      <div class="slider"><label for="p-H2">Высота башни 2</label><output id="o-H2"></output><input type="range" id="p-H2" min="100" max="500" step="5"></div>
+      <div class="slider"><label for="p-Twist">Закрутка разрыва</label><output id="o-Twist"></output><input type="range" id="p-Twist" min="-120" max="120" step="1"></div>
+      <div class="slider"><label for="p-CutAng">Угол разрыва внизу</label><output id="o-CutAng"></output><input type="range" id="p-CutAng" min="-60" max="60" step="1"></div>
+      <div class="slider"><label for="p-Gap">Ширина разрыва</label><output id="o-Gap"></output><input type="range" id="p-Gap" min="6" max="40" step="1"></div>
+      <div class="slider"><label for="p-Taper">Сужение кверху</label><output id="o-Taper"></output><input type="range" id="p-Taper" min="0.6" max="1.1" step="0.01"></div>
+      <div class="slider"><label for="p-FloorH">Высота этажа</label><output id="o-FloorH"></output><input type="range" id="p-FloorH" min="3" max="5" step="0.1"></div>
+      <div class="slider"><label for="p-Sharp">Заострённость носиков</label><output id="o-Sharp"></output><input type="range" id="p-Sharp" min="0.5" max="1" step="0.01"></div>
+      <div class="slider"><label for="p-CrownH">Высота короны</label><output id="o-CrownH"></output><input type="range" id="p-CrownH" min="0" max="40" step="1"></div>
+    </div>
+
+    <div class="group">
+      <span class="label">Показатели</span>
+      <dl>
+        <dt><span class="swatch" style="background:#96b4d2"></span>Башня 1</dt><dd id="s-t1"></dd>
+        <dt><span class="swatch" style="background:#a0c8aa"></span>Башня 2</dt><dd id="s-t2"></dd>
+        <dt>Этаж башни 1, низ / верх</dt><dd id="s-a1"></dd>
+        <dt>Этаж башни 2, низ / верх</dt><dd id="s-a2"></dd>
+        <dt>Общий 1-й этаж</dt><dd id="s-base"></dd>
+        <dt>Площадь по контуру</dt><dd id="s-total"></dd>
+      </dl>
+      <p class="note">План «лимона» 120 × 60 м, общий первый этаж 6 м, этажи башен считаются над ним. Внешний контур не смещается, закручивается полоса разрыва.</p>
+    </div>
+
+    <div class="group toggles">
+      <span class="label">Показать</span>
+      <label><input type="checkbox" id="t-floors" checked> Линии перекрытий</label>
+      <label><input type="checkbox" id="t-crowns" checked> Короны (техэтаж)</label>
+      <label><input type="checkbox" id="t-spin"> Медленно вращать</label>
+    </div>
+  </aside>
+</main>
+
+<script>
+// Генератор башен — перенос компонента «Башни» из Grasshopper (башни_код_компонента.py).
+// Координаты плана: x — восток, y — север, z — вверх. Возвращает кольца сечений, этажи и показатели.
+const TowerGeom = (() => {
+  const N_DENSE = 360;  // точек на контур «лимона»
+  const M_OUTER = 64;   // точек на внешнюю кромку сечения
+  const K_CUT = 6;      // промежуточных точек на кромке разреза
+
+  function lemon(p, scale) {
+    const pts = [];
+    for (let i = 0; i < N_DENSE; i++) {
+      const t = 2 * Math.PI * i / N_DENSE, s = Math.sin(t);
+      pts.push([0.5 * p.W * scale * Math.sign(s) * Math.pow(Math.abs(s), 2 * p.Sharp), 0.5 * p.L * scale * Math.cos(t)]);
+    }
+    return pts;
+  }
+
+  // часть многоугольника, где n·p >= c; точки пересечения помечены
+  function clip(poly, n, c) {
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const da = a[0] * n[0] + a[1] * n[1] - c, db = b[0] * n[0] + b[1] * n[1] - c;
+      if (da >= 0) out.push([a, false]);
+      if ((da >= 0) !== (db >= 0)) {
+        const t = da / (da - db);
+        out.push([[a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])], true]);
+      }
+    }
+    return out;
+  }
+
+  function shoelace(pts) {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
+      a += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(a) / 2;
+  }
+
+  function resample(chain, m) {
+    const seg = [0];
+    for (let i = 1; i < chain.length; i++) seg.push(seg[i - 1] + Math.hypot(chain[i][0] - chain[i - 1][0], chain[i][1] - chain[i - 1][1]));
+    const total = seg[seg.length - 1], res = [];
+    let j = 0;
+    for (let i = 0; i < m; i++) {
+      const s = total * i / (m - 1);
+      while (j < seg.length - 2 && seg[j + 1] < s) j++;
+      const span = seg[j + 1] - seg[j], t = span ? (s - seg[j]) / span : 0;
+      const a = chain[j], b = chain[j + 1];
+      res.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+    }
+    return res;
+  }
+
+  const cutAngle = (p, z) => (p.CutAng + p.Twist * (p.H1 > 0 ? z / p.H1 : 0)) * Math.PI / 180;
+
+  // сечение башни (sign +1 — башня 1 на севере, −1 — башня 2) на высоте z
+  function section(p, sign, z, H) {
+    const f = H > 0 ? Math.min(Math.max(z / H, 0), 1) : 0;
+    const sc = 1 + (p.Taper - 1) * f, th = cutAngle(p, z);
+    const n = [-Math.sin(th) * sign, Math.cos(th) * sign], d = [Math.cos(th) * sign, Math.sin(th) * sign];
+    const c = 0.5 * p.Gap * sc + p.Inset * f;
+    const poly = clip(lemon(p, sc), n, c);
+    if (poly.length < 3) return null;
+    const area = shoelace(poly.map((q) => q[0]));
+    let cut = -1;
+    for (let i = 0; i < poly.length; i++) if (poly[i][1] && poly[(i + 1) % poly.length][1]) { cut = i; break; }
+    if (cut < 0) return null;
+    let chain = [];
+    for (let i = 0; i < poly.length; i++) chain.push(poly[(cut + 1 + i) % poly.length][0]);
+    const dot = (q) => q[0] * d[0] + q[1] * d[1];
+    if (dot(chain[0]) < dot(chain[chain.length - 1])) chain.reverse();
+    const outer = resample(chain, M_OUTER);
+    const a = outer[outer.length - 1], b = outer[0], inner = [];
+    for (let k = 0; k <= K_CUT + 1; k++) {
+      const t = k / (K_CUT + 1);
+      inner.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+    }
+    return { outer, inner, area, z, n };
+  }
+
+  function levels(z0, z1, step) {
+    const zs = [];
+    for (let z = z0; z < z1 - 1e-6; z += step) zs.push(z);
+    zs.push(z1);
+    return zs;
+  }
+
+  function tower(p, sign, H) {
+    const Hb = Math.max(H - p.CrownH, p.FloorH);
+    const step = Math.min(p.FloorH, 4);
+    const body = levels(0, Hb, step).map((z) => section(p, sign, z, H)).filter(Boolean);
+    let crown = [];
+    if (H - Hb > 0.5) {
+      crown = levels(Hb, H, 2).map((z) => section(p, sign, z, H)).filter(Boolean);
+      const top = crown[crown.length - 1];
+      if (top && Math.abs(p.CrownSlope) > 0.1) {
+        // наклонный срез короны: выше на внешней стороне, дальше от разрыва
+        const n = top.n, proj = top.outer.map((q) => q[0] * n[0] + q[1] * n[1]);
+        const hi = Math.max(...proj), lo = Math.min(...proj);
+        let slope = p.CrownSlope * Math.PI / 180;
+        if (Math.abs(Math.tan(slope)) * (hi - lo) > 0.95 * (H - Hb)) slope = Math.sign(slope) * Math.atan(0.95 * (H - Hb) / (hi - lo));
+        const ref = slope > 0 ? hi : lo, k = Math.tan(slope);
+        crown.planeZ = (x, y) => H - k * (ref - (x * n[0] + y * n[1]));
+      }
+    }
+    const floors = [];
+    for (let i = 0; p.Podium + i * p.FloorH < Hb - 1e-6; i++) {
+      const s = section(p, sign, p.Podium + i * p.FloorH, H);
+      if (s) floors.push(s);
+    }
+    return { H, Hb, body, crown, floors };
+  }
+
+  function build(p) {
+    const t1 = tower(p, 1, p.H1), t2 = tower(p, -1, p.H2);
+    const base = lemon(p, 1);
+    const baseArea = p.Podium > 0 ? shoelace(base) : 0;
+    const sum = (t) => t.floors.reduce((a, s) => a + s.area, 0);
+    return {
+      towers: [t1, t2], base, baseArea,
+      stats: {
+        baseArea,
+        t: [t1, t2].map((t) => ({
+          H: t.H, floors: t.floors.length,
+          low: t.floors.length ? t.floors[0].area : 0,
+          high: t.floors.length ? t.floors[t.floors.length - 1].area : 0,
+          total: sum(t)
+        })),
+        total: baseArea + sum(t1) + sum(t2)
+      }
+    };
+  }
+
+  const DEFAULTS = { L: 120, W: 60, Sharp: 0.75, Gap: 20, CutAng: 25, H1: 360, H2: 270, FloorH: 4.2, Twist: -50,
+    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6 };
+  return { build, DEFAULTS };
+})();
+if (typeof module !== 'undefined') module.exports = TowerGeom;
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  const stage = document.getElementById('stage');
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const P = Object.assign({}, TowerGeom.DEFAULTS);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  stage.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+
+  // две камеры: перспектива для свободного вращения, параллельная проекция для видов-кнопок
+  const persp = new THREE.PerspectiveCamera(38, 1, 1, 6000);
+  const ortho = new THREE.OrthographicCamera(-100, 100, 100, -100, -4000, 8000);
+  const ctlP = new THREE.OrbitControls(persp, renderer.domElement);
+  const ctlO = new THREE.OrbitControls(ortho, renderer.domElement);
+  [ctlP, ctlO].forEach((c) => { c.enableDamping = true; c.dampingFactor = 0.08; c.autoRotateSpeed = 0.8; });
+  ctlP.minDistance = 20; ctlP.maxDistance = 2500;
+  ctlO.minZoom = 0.2; ctlO.maxZoom = 12;
+  let camera = persp, controls = ctlP;
+  ctlO.enabled = false;
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f96, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.75); sun.position.set(300, 500, 200); scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.3); fill.position.set(-300, -150, -250); scene.add(fill);
+
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  const MAT = { t1: mat(0x96b4d2), t2: mat(0xa0c8aa), crown: mat(0xe6963c), base: mat(0xd7c8aa) };
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x2a3036, transparent: true, opacity: 0.35 });
+
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0xb9bec5, roughness: 1, side: THREE.FrontSide });
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(520, 96), groundMat);
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.05; scene.add(ground);
+  const arrowMat = new THREE.MeshBasicMaterial({ color: 0xc9711f });
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(5, 16, 3), arrowMat);
+  arrow.rotation.x = -Math.PI / 2; arrow.position.set(0, 0.3, -98); scene.add(arrow);
+  const tc = document.createElement('canvas'); tc.width = tc.height = 128;
+  const tctx = tc.getContext('2d');
+  tctx.font = '600 92px "Golos Text", sans-serif'; tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+  tctx.fillStyle = '#c9711f'; tctx.fillText('С', 64, 70);
+  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(tc), depthTest: false }));
+  tag.scale.set(14, 14, 1); tag.position.set(0, 9, -118); scene.add(tag);
+
+  // план (x восток, y север, z вверх) -> сцена (x, z, −y)
+  const V = (x, y, z) => [x, z, -y];
+
+  function stripMesh(rings, key, zOf) {
+    // rings: [{pts:[[x,y]...], z}], одинаковое число точек; полоса между соседними кольцами
+    const pos = [], idx = [], m = rings[0].pts.length;
+    rings.forEach((r) => r.pts.forEach((q) => pos.push(...V(q[0], q[1], zOf ? zOf(q, r.z) : r.z))));
+    for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < m - 1; j++) {
+      const a = i * m + j, b = a + 1, c = a + m, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+    return [pos, idx];
+  }
+  function capMesh(pts, z, zOf) {
+    let cx = 0, cy = 0; pts.forEach((q) => { cx += q[0]; cy += q[1]; }); cx /= pts.length; cy /= pts.length;
+    const pos = [...V(cx, cy, zOf ? zOf([cx, cy], z) : z)], idx = [];
+    pts.forEach((q) => pos.push(...V(q[0], q[1], zOf ? zOf(q, z) : z)));
+    for (let j = 0; j < pts.length; j++) idx.push(0, 1 + j, 1 + (j + 1) % pts.length);
+    return [pos, idx];
+  }
+  function toMesh(parts, material) {
+    const pos = [], idx = [];
+    parts.forEach(([p, i]) => { const base = pos.length / 3; pos.push(...p); i.forEach((k) => idx.push(k + base)); });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return new THREE.Mesh(g, material);
+  }
+  const ring = (s) => s.outer.concat(s.inner.slice(1, -1));
+
+  let model = new THREE.Group(), crowns = [], floors = [];
+  scene.add(model);
+  function rebuild() {
+    const r = TowerGeom.build(P);
+    scene.remove(model);
+    model.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    model = new THREE.Group(); crowns = []; floors = [];
+    r.towers.forEach((t, ti) => {
+      const m = ti === 0 ? MAT.t1 : MAT.t2;
+      const outerR = t.body.map((s) => ({ pts: s.outer, z: s.z }));
+      const innerR = t.body.map((s) => ({ pts: s.inner, z: s.z }));
+      const top = t.body[t.body.length - 1];
+      model.add(toMesh([stripMesh(outerR), stripMesh(innerR), capMesh(ring(t.body[0]), 0), capMesh(ring(top), top.z)], m));
+      if (t.crown.length > 1) {
+        const zf = t.crown.planeZ ? (q, z) => Math.min(z, t.crown.planeZ(q[0], q[1])) : null;
+        const cO = t.crown.map((s) => ({ pts: s.outer, z: s.z })), cI = t.crown.map((s) => ({ pts: s.inner, z: s.z }));
+        const ct = t.crown[t.crown.length - 1];
+        const cm = toMesh([stripMesh(cO, null, zf), stripMesh(cI, null, zf), capMesh(ring(ct), ct.z, zf)], MAT.crown);
+        crowns.push(cm); model.add(cm);
+      }
+      const lp = [];
+      t.floors.forEach((s) => {
+        const pts = ring(s);
+        for (let j = 0; j < pts.length; j++) {
+          const a = pts[j], b = pts[(j + 1) % pts.length];
+          lp.push(...V(a[0], a[1], s.z + 0.05), ...V(b[0], b[1], s.z + 0.05));
+        }
+      });
+      const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+      const ls = new THREE.LineSegments(lg, lineMat); floors.push(ls); model.add(ls);
+    });
+    if (P.Podium > 0) {
+      const b = r.base.concat([r.base[0]]);
+      model.add(toMesh([stripMesh([{ pts: b, z: 0 }, { pts: b, z: P.Podium }]), capMesh(r.base, P.Podium), capMesh(r.base, 0)], MAT.base));
+    }
+    scene.add(model);
+    applyToggles();
+    showStats(r.stats);
+  }
+
+  const fmt = (v, d = 0) => v.toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
+  function showStats(s) {
+    const [a, b] = s.t;
+    document.getElementById('s-t1').textContent = `${fmt(a.H)} м · ${a.floors} эт.`;
+    document.getElementById('s-t2').textContent = `${fmt(b.H)} м · ${b.floors} эт.`;
+    document.getElementById('s-a1').textContent = `${fmt(a.low)} / ${fmt(a.high)} м²`;
+    document.getElementById('s-a2').textContent = `${fmt(b.low)} / ${fmt(b.high)} м²`;
+    document.getElementById('s-base').textContent = `${fmt(s.baseArea)} м²`;
+    document.getElementById('s-total').textContent = `≈ ${fmt(Math.round(s.total / 100) * 100)} м²`;
+  }
+
+  // ползунки
+  const UNITS = { H1: [' м', 0], H2: [' м', 0], Twist: ['°', 0], CutAng: ['°', 0], Gap: [' м', 0], Taper: ['', 2], FloorH: [' м', 1], Sharp: ['', 2], CrownH: [' м', 0] };
+  let pending = false;
+  Object.keys(UNITS).forEach((k) => {
+    const el = document.getElementById('p-' + k), out = document.getElementById('o-' + k);
+    const show = () => { out.textContent = fmt(+el.value, UNITS[k][1]) + UNITS[k][0]; };
+    el.value = P[k]; show();
+    el.addEventListener('input', () => {
+      P[k] = +el.value; show();
+      if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; rebuild(); }); }
+    });
+  });
+  document.getElementById('reset').addEventListener('click', () => {
+    Object.assign(P, TowerGeom.DEFAULTS);
+    Object.keys(UNITS).forEach((k) => { const el = document.getElementById('p-' + k); el.value = P[k]; el.dispatchEvent(new Event('input')); });
+  });
+
+  function applyToggles() {
+    const f = document.getElementById('t-floors').checked, c = document.getElementById('t-crowns').checked;
+    floors.forEach((o) => { o.visible = f; }); crowns.forEach((o) => { o.visible = c; });
+  }
+  document.getElementById('t-floors').addEventListener('change', applyToggles);
+  document.getElementById('t-crowns').addEventListener('change', applyToggles);
+  const spin = document.getElementById('t-spin');
+  spin.addEventListener('change', () => { ctlP.autoRotate = ctlO.autoRotate = spin.checked; });
+
+  function applyTheme() {
+    scene.background = new THREE.Color(css('--scene') || '#9aa1aa');
+    groundMat.color.set(css('--ground') || '#b9bec5');
+    lineMat.color.set(css('--floor-line') || '#2a3036');
+    arrowMat.color.set(css('--accent') || '#c9711f');
+  }
+  applyTheme();
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // виды: направление на камеру (x восток, y вверх, z юг); кнопки — параллельная проекция
+  const VIEWS = {
+    persp: { dir: [0.62, 0.32, 0.72], label: 'Перспектива' },
+    axo:   { dir: [1, 1.15, 1], label: 'Аксонометрия с юго-востока', ortho: true },
+    top:   { dir: [0.0001, 1, 0.0003], label: 'Сверху, север вверху', ortho: true },
+    bot:   { dir: [-0.85, -0.75, 0.55], label: 'Аксонометрия снизу, с юго-запада', ortho: true },
+    s:     { dir: [0, 0, 1], label: 'Фасад южный', ortho: true },
+    e:     { dir: [1, 0, 0], label: 'Фасад восточный', ortho: true },
+    n:     { dir: [0, 0, -1], label: 'Фасад северный', ortho: true },
+    w:     { dir: [-1, 0, 0], label: 'Фасад западный', ortho: true }
+  };
+  const box = () => new THREE.Box3().setFromObject(model);
+  function frame(key) {
+    const v = VIEWS[key], b = box(), center = b.getCenter(new THREE.Vector3());
+    const dir = new THREE.Vector3(...v.dir).normalize();
+    const corners = [];
+    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) corners.push(new THREE.Vector3(x, y, z));
+    if (v.ortho) {
+      ortho.position.copy(center).addScaledVector(dir, 2000);
+      ortho.up.set(0, 1, 0); ortho.lookAt(center);
+      ortho.updateMatrixWorld();
+      const inv = ortho.matrixWorldInverse;
+      let hw = 0, hh = 0;
+      corners.forEach((p) => { const q = p.clone().applyMatrix4(inv); hw = Math.max(hw, Math.abs(q.x)); hh = Math.max(hh, Math.abs(q.y)); });
+      const aspect = stage.clientWidth / Math.max(stage.clientHeight, 1);
+      const half = Math.max(hh, hw / aspect) * 1.1;
+      ortho.left = -half * aspect; ortho.right = half * aspect; ortho.top = half; ortho.bottom = -half; ortho.zoom = 1;
+      ortho.updateProjectionMatrix();
+      ctlO.target.copy(center);
+      use(ortho, ctlO);
+    } else {
+      const r = b.getBoundingSphere(new THREE.Sphere()).radius;
+      const halfV = THREE.MathUtils.degToRad(persp.fov) / 2, halfH = Math.atan(Math.tan(halfV) * persp.aspect);
+      persp.position.copy(center).addScaledVector(dir, r / Math.sin(Math.min(halfV, halfH)) * 1.02);
+      ctlP.target.copy(center);
+      use(persp, ctlP);
+    }
+    current = key;
+    document.getElementById('badge').textContent = v.label;
+    document.querySelectorAll('button.view').forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.view === key)));
+  }
+  function use(cam, ctl) {
+    camera = cam; controls = ctl;
+    ctlP.enabled = ctl === ctlP; ctlO.enabled = ctl === ctlO;
+  }
+  let current = 'persp';
+  document.querySelectorAll('button.view').forEach((btn) => btn.addEventListener('click', () => {
+    current = btn.dataset.view; frame(current);
+    ground.visible = arrow.visible = tag.visible = current !== 'bot';
+  }));
+
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    persp.aspect = w / Math.max(h, 1); persp.updateProjectionMatrix();
+    if (camera === ortho) {
+      const half = ortho.top, aspect = w / Math.max(h, 1);
+      ortho.left = -half * aspect; ortho.right = half * aspect; ortho.updateProjectionMatrix();
+    }
+  }
+  new ResizeObserver(resize).observe(stage);
+
+  rebuild();
+  resize();
+  frame('persp');
+  renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+})();
+</script>
