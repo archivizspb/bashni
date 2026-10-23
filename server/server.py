@@ -22,7 +22,7 @@ PARAMS = {
     "L": (40, 300), "W": (20, 200), "Sharp": (0.3, 1.2), "Gap": (0, 100), "CutAng": (-90, 90),
     "H1": (50, 1000), "H2": (50, 1000), "FloorH": (2, 8), "Twist": (-360, 360), "Taper": (0.2, 3),
     "Inset": (0, 50), "CrownH": (0, 100), "CrownSlope": (-60, 60), "Podium": (0, 50),
-    "BaseScale": (0.2, 3), "Bulge": (-1, 2), "BulgeZ": (0, 1000),
+    "BaseScale": (0.2, 3), "Bulge": (-1, 2), "BulgeZ": (0, 1000), "TipR": (0, 50),
 }
 
 lock = threading.Lock()

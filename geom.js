@@ -5,13 +5,65 @@ const TowerGeom = (() => {
   const M_OUTER = 64;   // точек на внешнюю кромку сечения
   const K_CUT = 6;      // промежуточных точек на кромке разреза
 
-  function lemon(p, scale) {
+  function rawLemon(p) {
     const pts = [];
     for (let i = 0; i < N_DENSE; i++) {
       const t = 2 * Math.PI * i / N_DENSE, s = Math.sin(t);
-      pts.push([0.5 * p.W * scale * Math.sign(s) * Math.pow(Math.abs(s), 2 * p.Sharp), 0.5 * p.L * scale * Math.cos(t)]);
+      pts.push([0.5 * p.W * Math.sign(s) * Math.pow(Math.abs(s), 2 * p.Sharp), 0.5 * p.L * Math.cos(t)]);
     }
     return pts;
+  }
+
+  // Скругление носиков радиусом TipR: «открытие» выпуклого контура кругом —
+  // сжать контур на R (пересечение сдвинутых полуплоскостей), затем раздуть на R дугами.
+  // Где кривизна контура меньше 1/R, он не меняется; острые носики получают ровно радиус R.
+  function roundContour(pts, R) {
+    let area = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      area += a[0] * b[1] - b[0] * a[1];
+    }
+    const sgn = area > 0 ? 1 : -1;  // против часовой — внешняя нормаль (ey, −ex)
+    const outward = (a, b) => {
+      const ex = b[0] - a[0], ey = b[1] - a[1], l = Math.hypot(ex, ey) || 1;
+      return [sgn * ey / l, -sgn * ex / l];
+    };
+    let er = pts.slice();
+    for (let i = 0; i < pts.length && er.length >= 3; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length], n = outward(a, b);
+      er = clip(er, [-n[0], -n[1]], -(n[0] * a[0] + n[1] * a[1]) + R).map((q) => q[0]);
+    }
+    if (er.length < 3) return pts;
+    const out = [];
+    for (let i = 0; i < er.length; i++) {
+      const prev = er[(i - 1 + er.length) % er.length], v = er[i], next = er[(i + 1) % er.length];
+      const n0 = outward(prev, v), n1 = outward(v, next);
+      let a0 = Math.atan2(n0[1], n0[0]), a1 = Math.atan2(n1[1], n1[0]);
+      let da = a1 - a0;
+      while (da > Math.PI) da -= 2 * Math.PI;
+      while (da < -Math.PI) da += 2 * Math.PI;
+      const steps = Math.max(1, Math.ceil(Math.abs(da) / (Math.PI / 60)));
+      for (let k = 0; k <= steps; k++) {
+        const ang = a0 + da * k / steps;
+        out.push([v[0] + R * Math.cos(ang), v[1] + R * Math.sin(ang)]);
+      }
+    }
+    // равномерно по длине, с той же стартовой точкой (вершина севера) и тем же обходом
+    let start = 0;
+    out.forEach((q, i) => { if (q[1] > out[start][1]) start = i; });
+    const ring = out.slice(start).concat(out.slice(0, start + 1));
+    return resample(ring, N_DENSE + 1).slice(0, N_DENSE);
+  }
+
+  const lemonCache = new Map();
+  function lemon(p, scale) {
+    const key = [p.L, p.W, p.Sharp, p.TipR].join('|');
+    if (!lemonCache.has(key)) {
+      if (lemonCache.size > 50) lemonCache.clear();
+      const raw = rawLemon(p);
+      lemonCache.set(key, p.TipR > 0.01 ? roundContour(raw, Math.min(p.TipR, 0.45 * Math.min(p.L, p.W))) : raw);
+    }
+    return lemonCache.get(key).map((q) => [q[0] * scale, q[1] * scale]);
   }
 
   // часть многоугольника, где n·p >= c; точки пересечения помечены
@@ -96,22 +148,24 @@ const TowerGeom = (() => {
   }
 
   function tower(p, sign, H) {
-    const Hb = Math.max(H - p.CrownH, p.FloorH);
+    // наклонный срез короны: выше на внешней стороне, дальше от разрыва. Наклон не урезается:
+    // если перепад среза не помещается в заданную высоту короны, корона становится выше
+    let crownH = p.CrownH, planeZ = null;
+    const topSec = p.CrownH > 0.5 ? section(p, sign, H, H) : null;
+    if (topSec && Math.abs(p.CrownSlope) > 0.1) {
+      const n = topSec.n, proj = topSec.outer.map((q) => q[0] * n[0] + q[1] * n[1]);
+      const hi = Math.max(...proj), lo = Math.min(...proj);
+      const k = Math.tan(p.CrownSlope * Math.PI / 180), ref = k > 0 ? hi : lo;
+      crownH = Math.max(crownH, Math.abs(k) * (hi - lo) * 1.08 + 2);
+      planeZ = (x, y) => H - k * (ref - (x * n[0] + y * n[1]));
+    }
+    const Hb = Math.max(H - crownH, p.FloorH);
     const step = Math.min(p.FloorH, 4);
     const body = levels(0, Hb, step).map((z) => section(p, sign, z, H)).filter(Boolean);
     let crown = [];
     if (H - Hb > 0.5) {
       crown = levels(Hb, H, 2).map((z) => section(p, sign, z, H)).filter(Boolean);
-      const top = crown[crown.length - 1];
-      if (top && Math.abs(p.CrownSlope) > 0.1) {
-        // наклонный срез короны: выше на внешней стороне, дальше от разрыва
-        const n = top.n, proj = top.outer.map((q) => q[0] * n[0] + q[1] * n[1]);
-        const hi = Math.max(...proj), lo = Math.min(...proj);
-        let slope = p.CrownSlope * Math.PI / 180;
-        if (Math.abs(Math.tan(slope)) * (hi - lo) > 0.95 * (H - Hb)) slope = Math.sign(slope) * Math.atan(0.95 * (H - Hb) / (hi - lo));
-        const ref = slope > 0 ? hi : lo, k = Math.tan(slope);
-        crown.planeZ = (x, y) => H - k * (ref - (x * n[0] + y * n[1]));
-      }
+      if (planeZ) crown.planeZ = planeZ;
     }
     const floors = [];
     for (let i = 0; p.Podium + i * p.FloorH < Hb - 1e-6; i++) {
@@ -131,7 +185,7 @@ const TowerGeom = (() => {
       stats: {
         baseArea,
         t: [t1, t2].map((t) => ({
-          H: t.H, floors: t.floors.length,
+          H: t.H, crownH: t.H - t.Hb, floors: t.floors.length,
           low: t.floors.length ? t.floors[0].area : 0,
           high: t.floors.length ? t.floors[t.floors.length - 1].area : 0,
           total: sum(t)
@@ -142,7 +196,7 @@ const TowerGeom = (() => {
   }
 
   const DEFAULTS = { L: 120, W: 60, Sharp: 0.75, Gap: 20, CutAng: 25, H1: 360, H2: 270, FloorH: 4.2, Twist: -50,
-    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6, BaseScale: 1, Bulge: 0, BulgeZ: 120 };
+    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6, BaseScale: 1, Bulge: 0, BulgeZ: 120, TipR: 0 };
   return { build, DEFAULTS, scaleAt };
 })();
 if (typeof module !== 'undefined') module.exports = TowerGeom;
