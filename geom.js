@@ -53,12 +53,20 @@ const TowerGeom = (() => {
     return res;
   }
 
+  // масштаб сечения по высоте: прямая от ширины внизу (BaseScale) к ширине наверху (Taper)
+  // плюс плавное расширение Bulge — ноль внизу и наверху, максимум на высоте BulgeZ (м)
+  function scaleAt(p, f, H) {
+    const m = H > 0 ? Math.min(Math.max(p.BulgeZ / H, 0.05), 0.95) : 0.5;
+    const g = f < m ? 0.5 * f / m : 0.5 + 0.5 * (f - m) / (1 - m);
+    return p.BaseScale + (p.Taper - p.BaseScale) * f + p.Bulge * Math.sin(Math.PI * g);
+  }
+
   const cutAngle = (p, z) => (p.CutAng + p.Twist * (p.H1 > 0 ? z / p.H1 : 0)) * Math.PI / 180;
 
   // сечение башни (sign +1 — башня 1 на севере, −1 — башня 2) на высоте z
   function section(p, sign, z, H) {
     const f = H > 0 ? Math.min(Math.max(z / H, 0), 1) : 0;
-    const sc = 1 + (p.Taper - 1) * f, th = cutAngle(p, z);
+    const sc = scaleAt(p, f, H), th = cutAngle(p, z);
     const n = [-Math.sin(th) * sign, Math.cos(th) * sign], d = [Math.cos(th) * sign, Math.sin(th) * sign];
     const c = 0.5 * p.Gap * sc + p.Inset * f;
     const poly = clip(lemon(p, sc), n, c);
@@ -134,7 +142,7 @@ const TowerGeom = (() => {
   }
 
   const DEFAULTS = { L: 120, W: 60, Sharp: 0.75, Gap: 20, CutAng: 25, H1: 360, H2: 270, FloorH: 4.2, Twist: -50,
-    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6 };
-  return { build, DEFAULTS };
+    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6, BaseScale: 1, Bulge: 0, BulgeZ: 120 };
+  return { build, DEFAULTS, scaleAt };
 })();
 if (typeof module !== 'undefined') module.exports = TowerGeom;

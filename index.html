@@ -74,6 +74,8 @@ dt { color: var(--muted); }
 dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
 .note { font-size: 12.5px; color: var(--muted); margin: 0; }
+#profile { width: 100%; height: auto; aspect-ratio: 580 / 380; max-width: 100%; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); touch-action: none; cursor: grab; }
+#profile:active { cursor: grabbing; }
 @media (max-width: 800px) {
   main { grid-template-columns: 1fr; }
   #stage { min-height: 0; height: 62vh; }
@@ -113,10 +115,28 @@ dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-num
       <div class="slider"><label for="p-Twist">Закрутка разрыва</label><output id="o-Twist"></output><input type="range" id="p-Twist" min="-120" max="120" step="1"></div>
       <div class="slider"><label for="p-CutAng">Угол разрыва внизу</label><output id="o-CutAng"></output><input type="range" id="p-CutAng" min="-60" max="60" step="1"></div>
       <div class="slider"><label for="p-Gap">Ширина разрыва</label><output id="o-Gap"></output><input type="range" id="p-Gap" min="6" max="40" step="1"></div>
-      <div class="slider"><label for="p-Taper">Сужение кверху</label><output id="o-Taper"></output><input type="range" id="p-Taper" min="0.6" max="1.1" step="0.01"></div>
       <div class="slider"><label for="p-FloorH">Высота этажа</label><output id="o-FloorH"></output><input type="range" id="p-FloorH" min="3" max="5" step="0.1"></div>
       <div class="slider"><label for="p-Sharp">Заострённость носиков</label><output id="o-Sharp"></output><input type="range" id="p-Sharp" min="0.5" max="1" step="0.01"></div>
       <div class="slider"><label for="p-CrownH">Высота короны</label><output id="o-CrownH"></output><input type="range" id="p-CrownH" min="0" max="40" step="1"></div>
+    </div>
+
+    <div class="group">
+      <span class="label">Профиль по высоте</span>
+      <canvas id="profile" width="580" height="380" aria-label="Профиль ширины башен по высоте; точку можно перетаскивать"></canvas>
+      <p class="note">Ширина — доля от плана «лимона», 100 % — край основания. Точку можно тянуть: вверх-вниз — высота, влево-вправо — расширение.</p>
+      <div class="slider"><label for="p-BaseScale">Ширина внизу</label><output id="o-BaseScale"></output><input type="range" id="p-BaseScale" min="70" max="115" step="1"></div>
+      <div class="slider"><label for="p-Taper">Ширина наверху</label><output id="o-Taper"></output><input type="range" id="p-Taper" min="50" max="120" step="1"></div>
+      <div class="slider"><label for="p-BulgeZ">Высота точки</label><output id="o-BulgeZ"></output><input type="range" id="p-BulgeZ" min="10" max="490" step="5"></div>
+      <div class="slider"><label for="p-Bulge">Расширение в точке</label><output id="o-Bulge"></output><input type="range" id="p-Bulge" min="-40" max="30" step="1"></div>
+    </div>
+
+    <div class="group">
+      <span class="label">План и детали</span>
+      <div class="slider"><label for="p-L">Длина плана</label><output id="o-L"></output><input type="range" id="p-L" min="80" max="160" step="1"></div>
+      <div class="slider"><label for="p-W">Ширина плана</label><output id="o-W"></output><input type="range" id="p-W" min="40" max="90" step="1"></div>
+      <div class="slider"><label for="p-Inset">Отступ кромки разрыва к верху</label><output id="o-Inset"></output><input type="range" id="p-Inset" min="0" max="15" step="0.5"></div>
+      <div class="slider"><label for="p-CrownSlope">Наклон среза короны</label><output id="o-CrownSlope"></output><input type="range" id="p-CrownSlope" min="-30" max="30" step="1"></div>
+      <div class="slider"><label for="p-Podium">Общий 1-й этаж</label><output id="o-Podium"></output><input type="range" id="p-Podium" min="0" max="15" step="0.5"></div>
     </div>
 
     <div class="group">
@@ -129,7 +149,7 @@ dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-num
         <dt>Общий 1-й этаж</dt><dd id="s-base"></dd>
         <dt>Площадь по контуру</dt><dd id="s-total"></dd>
       </dl>
-      <p class="note">План «лимона» 120 × 60 м, общий первый этаж 6 м, этажи башен считаются над ним. Внешний контур не смещается, закручивается полоса разрыва.</p>
+      <p class="note">Этажи башен считаются над общим первым этажом. Площадь — по внешнему контуру этажей.</p>
     </div>
 
     <div class="group toggles">
@@ -197,12 +217,20 @@ const TowerGeom = (() => {
     return res;
   }
 
+  // масштаб сечения по высоте: прямая от ширины внизу (BaseScale) к ширине наверху (Taper)
+  // плюс плавное расширение Bulge — ноль внизу и наверху, максимум на высоте BulgeZ (м)
+  function scaleAt(p, f, H) {
+    const m = H > 0 ? Math.min(Math.max(p.BulgeZ / H, 0.05), 0.95) : 0.5;
+    const g = f < m ? 0.5 * f / m : 0.5 + 0.5 * (f - m) / (1 - m);
+    return p.BaseScale + (p.Taper - p.BaseScale) * f + p.Bulge * Math.sin(Math.PI * g);
+  }
+
   const cutAngle = (p, z) => (p.CutAng + p.Twist * (p.H1 > 0 ? z / p.H1 : 0)) * Math.PI / 180;
 
   // сечение башни (sign +1 — башня 1 на севере, −1 — башня 2) на высоте z
   function section(p, sign, z, H) {
     const f = H > 0 ? Math.min(Math.max(z / H, 0), 1) : 0;
-    const sc = 1 + (p.Taper - 1) * f, th = cutAngle(p, z);
+    const sc = scaleAt(p, f, H), th = cutAngle(p, z);
     const n = [-Math.sin(th) * sign, Math.cos(th) * sign], d = [Math.cos(th) * sign, Math.sin(th) * sign];
     const c = 0.5 * p.Gap * sc + p.Inset * f;
     const poly = clip(lemon(p, sc), n, c);
@@ -278,8 +306,8 @@ const TowerGeom = (() => {
   }
 
   const DEFAULTS = { L: 120, W: 60, Sharp: 0.75, Gap: 20, CutAng: 25, H1: 360, H2: 270, FloorH: 4.2, Twist: -50,
-    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6 };
-  return { build, DEFAULTS };
+    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6, BaseScale: 1, Bulge: 0, BulgeZ: 120 };
+  return { build, DEFAULTS, scaleAt };
 })();
 if (typeof module !== 'undefined') module.exports = TowerGeom;
 
@@ -413,21 +441,75 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   }
 
   // ползунки
-  const UNITS = { H1: [' м', 0], H2: [' м', 0], Twist: ['°', 0], CutAng: ['°', 0], Gap: [' м', 0], Taper: ['', 2], FloorH: [' м', 1], Sharp: ['', 2], CrownH: [' м', 0] };
+  // [подпись, знаков, множитель: значение ползунка × множитель = параметр]
+  const UNITS = { H1: [' м', 0, 1], H2: [' м', 0, 1], Twist: ['°', 0, 1], CutAng: ['°', 0, 1], Gap: [' м', 0, 1],
+    FloorH: [' м', 1, 1], Sharp: ['', 2, 1], CrownH: [' м', 0, 1], BaseScale: [' %', 0, 0.01], Taper: [' %', 0, 0.01],
+    BulgeZ: [' м', 0, 1], Bulge: [' %', 0, 0.01], L: [' м', 0, 1], W: [' м', 0, 1], Inset: [' м', 1, 1],
+    CrownSlope: ['°', 0, 1], Podium: [' м', 1, 1] };
   let pending = false;
+  const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; rebuild(); drawProfile(); }); } };
+  const showOut = (k) => {
+    const v = +document.getElementById('p-' + k).value, u = UNITS[k];
+    document.getElementById('o-' + k).textContent = (k === 'Bulge' && v > 0 ? '+' : '') + fmt(v, u[1]) + u[0];
+  };
+  function setSlider(k, paramValue) {
+    document.getElementById('p-' + k).value = Math.round(paramValue / UNITS[k][2] * 1000) / 1000;
+    showOut(k);
+  }
   Object.keys(UNITS).forEach((k) => {
-    const el = document.getElementById('p-' + k), out = document.getElementById('o-' + k);
-    const show = () => { out.textContent = fmt(+el.value, UNITS[k][1]) + UNITS[k][0]; };
-    el.value = P[k]; show();
-    el.addEventListener('input', () => {
-      P[k] = +el.value; show();
-      if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; rebuild(); }); }
-    });
+    const el = document.getElementById('p-' + k);
+    setSlider(k, P[k]);
+    el.addEventListener('input', () => { P[k] = +el.value * UNITS[k][2]; showOut(k); schedule(); });
   });
   document.getElementById('reset').addEventListener('click', () => {
     Object.assign(P, TowerGeom.DEFAULTS);
-    Object.keys(UNITS).forEach((k) => { const el = document.getElementById('p-' + k); el.value = P[k]; el.dispatchEvent(new Event('input')); });
+    Object.keys(UNITS).forEach((k) => setSlider(k, P[k]));
+    schedule();
   });
+
+  // график профиля: x — ширина (доля плана), y — высота; точку расширения можно тянуть
+  const prof = document.getElementById('profile'), pctx = prof.getContext('2d');
+  const PX = { l: 76, r: 20, t: 18, b: 40 }, SMIN = 0.4, SMAX = 1.45;
+  const maxH = () => Math.max(P.H1, P.H2) + 10;
+  const sx = (s) => PX.l + (s - SMIN) / (SMAX - SMIN) * (prof.width - PX.l - PX.r);
+  const sy = (z) => prof.height - PX.b - z / maxH() * (prof.height - PX.t - PX.b);
+  const lin1 = (z) => P.BaseScale + (P.Taper - P.BaseScale) * Math.min(z / P.H1, 1);
+  function drawProfile() {
+    const W = prof.width, H = prof.height, fg = css('--muted') || '#5d6873', rule = css('--rule') || '#cfd5db';
+    pctx.clearRect(0, 0, W, H);
+    pctx.font = '22px "JetBrains Mono", monospace'; pctx.fillStyle = fg; pctx.strokeStyle = rule; pctx.lineWidth = 1.5;
+    for (let z = 0; z <= maxH(); z += 100) {
+      pctx.beginPath(); pctx.moveTo(PX.l, sy(z)); pctx.lineTo(W - PX.r, sy(z)); pctx.stroke();
+      pctx.textAlign = 'right'; pctx.textBaseline = 'middle'; pctx.fillText(z + ' м', PX.l - 8, sy(z));
+    }
+    [0.5, 1, 1.4].forEach((s) => { pctx.textAlign = 'center'; pctx.textBaseline = 'top'; pctx.fillText(Math.round(s * 100) + '%', sx(s), H - PX.b + 8); });
+    pctx.setLineDash([8, 6]); pctx.strokeStyle = fg; pctx.beginPath(); pctx.moveTo(sx(1), PX.t); pctx.lineTo(sx(1), H - PX.b); pctx.stroke(); pctx.setLineDash([]);
+    [[P.H2, '#7fb08c'], [P.H1, '#6f97c2']].forEach(([Ht, col]) => {
+      pctx.strokeStyle = col; pctx.lineWidth = 4; pctx.beginPath();
+      for (let i = 0; i <= 120; i++) {
+        const z = Ht * i / 120, s = TowerGeom.scaleAt(P, i / 120, Ht);
+        if (i) pctx.lineTo(sx(s), sy(z)); else pctx.moveTo(sx(s), sy(z));
+      }
+      pctx.stroke();
+    });
+    const zH = Math.min(P.BulgeZ, P.H1 * 0.95), hx = sx(TowerGeom.scaleAt(P, zH / P.H1, P.H1)), hy = sy(zH);
+    pctx.fillStyle = css('--accent') || '#c9711f'; pctx.beginPath(); pctx.arc(hx, hy, 11, 0, Math.PI * 2); pctx.fill();
+    pctx.strokeStyle = '#fff'; pctx.lineWidth = 3; pctx.stroke();
+  }
+  let drag = false;
+  function fromPointer(e) {
+    const r = prof.getBoundingClientRect(), x = (e.clientX - r.left) * prof.width / r.width, y = (e.clientY - r.top) * prof.height / r.height;
+    const z = Math.min(Math.max((prof.height - PX.b - y) / (prof.height - PX.t - PX.b) * maxH(), 10), Math.min(490, P.H1 * 0.95));
+    const s = SMIN + (x - PX.l) / (prof.width - PX.l - PX.r) * (SMAX - SMIN);
+    P.BulgeZ = Math.round(z / 5) * 5;
+    P.Bulge = Math.min(Math.max(Math.round((s - lin1(P.BulgeZ)) * 100) / 100, -0.4), 0.3);
+    setSlider('BulgeZ', P.BulgeZ); setSlider('Bulge', P.Bulge);
+    schedule();
+  }
+  prof.addEventListener('pointerdown', (e) => { drag = true; prof.setPointerCapture(e.pointerId); fromPointer(e); });
+  prof.addEventListener('pointermove', (e) => { if (drag) fromPointer(e); });
+  prof.addEventListener('pointerup', () => { drag = false; });
+  prof.addEventListener('pointercancel', () => { drag = false; });
 
   function applyToggles() {
     const f = document.getElementById('t-floors').checked, c = document.getElementById('t-crowns').checked;
@@ -439,6 +521,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   spin.addEventListener('change', () => { ctlP.autoRotate = ctlO.autoRotate = spin.checked; });
 
   function applyTheme() {
+    if (typeof drawProfile === 'function') drawProfile();
     scene.background = new THREE.Color(css('--scene') || '#9aa1aa');
     groundMat.color.set(css('--ground') || '#b9bec5');
     lineMat.color.set(css('--floor-line') || '#2a3036');
@@ -511,6 +594,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   new ResizeObserver(resize).observe(stage);
 
   rebuild();
+  drawProfile();
   resize();
   frame('persp');
   renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
