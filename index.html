@@ -124,10 +124,10 @@ dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-num
       <span class="label">Профиль по высоте</span>
       <canvas id="profile" width="580" height="380" aria-label="Профиль ширины башен по высоте; точку можно перетаскивать"></canvas>
       <p class="note">Ширина — доля от плана «лимона», 100 % — край основания. Точку можно тянуть: вверх-вниз — высота, влево-вправо — расширение.</p>
-      <div class="slider"><label for="p-BaseScale">Ширина внизу</label><output id="o-BaseScale"></output><input type="range" id="p-BaseScale" min="70" max="115" step="1"></div>
-      <div class="slider"><label for="p-Taper">Ширина наверху</label><output id="o-Taper"></output><input type="range" id="p-Taper" min="50" max="120" step="1"></div>
+      <div class="slider"><label for="p-BaseScale">Ширина внизу</label><output id="o-BaseScale"></output><input type="range" id="p-BaseScale" min="60" max="130" step="1"></div>
+      <div class="slider"><label for="p-Taper">Ширина наверху</label><output id="o-Taper"></output><input type="range" id="p-Taper" min="40" max="150" step="1"></div>
       <div class="slider"><label for="p-BulgeZ">Высота точки</label><output id="o-BulgeZ"></output><input type="range" id="p-BulgeZ" min="10" max="490" step="5"></div>
-      <div class="slider"><label for="p-Bulge">Расширение в точке</label><output id="o-Bulge"></output><input type="range" id="p-Bulge" min="-40" max="30" step="1"></div>
+      <div class="slider"><label for="p-Bulge">Расширение в точке</label><output id="o-Bulge"></output><input type="range" id="p-Bulge" min="-50" max="100" step="1"></div>
     </div>
 
     <div class="group">
@@ -469,7 +469,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
 
   // график профиля: x — ширина (доля плана), y — высота; точку расширения можно тянуть
   const prof = document.getElementById('profile'), pctx = prof.getContext('2d');
-  const PX = { l: 76, r: 20, t: 18, b: 40 }, SMIN = 0.4, SMAX = 1.45;
+  const PX = { l: 76, r: 20, t: 18, b: 40 }, SMIN = 0.4, SMAX = 2.1;
   const maxH = () => Math.max(P.H1, P.H2) + 10;
   const sx = (s) => PX.l + (s - SMIN) / (SMAX - SMIN) * (prof.width - PX.l - PX.r);
   const sy = (z) => prof.height - PX.b - z / maxH() * (prof.height - PX.t - PX.b);
@@ -482,7 +482,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
       pctx.beginPath(); pctx.moveTo(PX.l, sy(z)); pctx.lineTo(W - PX.r, sy(z)); pctx.stroke();
       pctx.textAlign = 'right'; pctx.textBaseline = 'middle'; pctx.fillText(z + ' м', PX.l - 8, sy(z));
     }
-    [0.5, 1, 1.4].forEach((s) => { pctx.textAlign = 'center'; pctx.textBaseline = 'top'; pctx.fillText(Math.round(s * 100) + '%', sx(s), H - PX.b + 8); });
+    [0.5, 1, 1.5, 2].forEach((s) => { pctx.textAlign = 'center'; pctx.textBaseline = 'top'; pctx.fillText(Math.round(s * 100) + '%', sx(s), H - PX.b + 8); });
     pctx.setLineDash([8, 6]); pctx.strokeStyle = fg; pctx.beginPath(); pctx.moveTo(sx(1), PX.t); pctx.lineTo(sx(1), H - PX.b); pctx.stroke(); pctx.setLineDash([]);
     [[P.H2, '#7fb08c'], [P.H1, '#6f97c2']].forEach(([Ht, col]) => {
       pctx.strokeStyle = col; pctx.lineWidth = 4; pctx.beginPath();
@@ -502,7 +502,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     const z = Math.min(Math.max((prof.height - PX.b - y) / (prof.height - PX.t - PX.b) * maxH(), 10), Math.min(490, P.H1 * 0.95));
     const s = SMIN + (x - PX.l) / (prof.width - PX.l - PX.r) * (SMAX - SMIN);
     P.BulgeZ = Math.round(z / 5) * 5;
-    P.Bulge = Math.min(Math.max(Math.round((s - lin1(P.BulgeZ)) * 100) / 100, -0.4), 0.3);
+    P.Bulge = Math.min(Math.max(Math.round((s - lin1(P.BulgeZ)) * 100) / 100, -0.5), 1.0);
     setSlider('BulgeZ', P.BulgeZ); setSlider('Bulge', P.Bulge);
     schedule();
   }
