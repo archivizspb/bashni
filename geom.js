@@ -118,16 +118,17 @@ const TowerGeom = (() => {
   const areaAt = (pts, n, c) => shoelace(clip(pts, n, c).map((q) => q[0]));
 
   // сечение башни (sign +1 — башня 1 на севере, −1 — башня 2) на высоте z.
-  // Shrink 0 — «лимон» масштабируется от центра, наклоняются и фасад, и разрез.
-  // Shrink 1 — сужение уходит в разрыв: внешний фасад вертикален (контур не меньше, чем внизу),
-  // а кромка разреза отодвигается, пока площадь этажа не станет той же, что при масштабе от центра
+  // Shrink — где центр сужения, 0…1. 0 — «лимон» масштабируется от центра, наклоняются и фасад, и разрез.
+  // 1 — сужение уходит в разрыв: внешний фасад вертикален (контур как внизу). Между ними внешний
+  // контур сужается на долю (1 − Shrink), а остальное добирает разрез: кромка отодвигается,
+  // пока площадь этажа не станет той же, что при масштабе от центра
   function section(p, sign, z, H) {
     const f = H > 0 ? Math.min(Math.max(z / H, 0), 1) : 0;
     const sc = scaleAt(p, f, H), th = cutAngle(p, z);
     const n = [-Math.sin(th) * sign, Math.cos(th) * sign], d = [Math.cos(th) * sign, Math.sin(th) * sign];
     let c = 0.5 * p.Gap * sc + p.Inset * f, so = sc;
-    if (p.Shrink && sc < p.BaseScale) {
-      so = p.BaseScale;
+    if (p.Shrink > 0 && sc < p.BaseScale) {
+      so = sc + Math.min(p.Shrink, 1) * (p.BaseScale - sc);
       const pts = lemon(p, so), target = areaAt(lemon(p, sc), n, c);
       let lo = c, hi = Math.max(...pts.map((q) => q[0] * n[0] + q[1] * n[1]));
       for (let it = 0; it < 28; it++) {
