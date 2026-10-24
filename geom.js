@@ -115,13 +115,28 @@ const TowerGeom = (() => {
 
   const cutAngle = (p, z) => (p.CutAng + p.Twist * (p.H1 > 0 ? z / p.H1 : 0)) * Math.PI / 180;
 
-  // сечение башни (sign +1 — башня 1 на севере, −1 — башня 2) на высоте z
+  const areaAt = (pts, n, c) => shoelace(clip(pts, n, c).map((q) => q[0]));
+
+  // сечение башни (sign +1 — башня 1 на севере, −1 — башня 2) на высоте z.
+  // Shrink 0 — «лимон» масштабируется от центра, наклоняются и фасад, и разрез.
+  // Shrink 1 — сужение уходит в разрыв: внешний фасад вертикален (контур не меньше, чем внизу),
+  // а кромка разреза отодвигается, пока площадь этажа не станет той же, что при масштабе от центра
   function section(p, sign, z, H) {
     const f = H > 0 ? Math.min(Math.max(z / H, 0), 1) : 0;
     const sc = scaleAt(p, f, H), th = cutAngle(p, z);
     const n = [-Math.sin(th) * sign, Math.cos(th) * sign], d = [Math.cos(th) * sign, Math.sin(th) * sign];
-    const c = 0.5 * p.Gap * sc + p.Inset * f;
-    const poly = clip(lemon(p, sc), n, c);
+    let c = 0.5 * p.Gap * sc + p.Inset * f, so = sc;
+    if (p.Shrink && sc < p.BaseScale) {
+      so = p.BaseScale;
+      const pts = lemon(p, so), target = areaAt(lemon(p, sc), n, c);
+      let lo = c, hi = Math.max(...pts.map((q) => q[0] * n[0] + q[1] * n[1]));
+      for (let it = 0; it < 28; it++) {
+        const mid = 0.5 * (lo + hi);
+        if (areaAt(pts, n, mid) > target) lo = mid; else hi = mid;
+      }
+      c = 0.5 * (lo + hi);
+    }
+    const poly = clip(lemon(p, so), n, c);
     if (poly.length < 3) return null;
     const area = shoelace(poly.map((q) => q[0]));
     let cut = -1;
@@ -148,12 +163,13 @@ const TowerGeom = (() => {
   }
 
   function tower(p, sign, H) {
-    // наклонный срез короны: выше на внешней стороне, дальше от разрыва. Наклон не урезается:
-    // если перепад среза не помещается в заданную высоту короны, корона становится выше
+    // наклонный срез короны: выше к внешнему носику, уклон — вдоль оси башни (север-юг), а не по
+    // закрученному разрезу, чтобы на обоих боковых фасадах угол был одинаковый при любой закрутке.
+    // Наклон не урезается: если перепад среза не помещается в высоту короны, корона становится выше
     let crownH = p.CrownH, planeZ = null;
     const topSec = p.CrownH > 0.5 ? section(p, sign, H, H) : null;
     if (topSec && Math.abs(p.CrownSlope) > 0.1) {
-      const n = topSec.n, proj = topSec.outer.map((q) => q[0] * n[0] + q[1] * n[1]);
+      const n = [0, sign], proj = topSec.outer.map((q) => q[0] * n[0] + q[1] * n[1]);
       const hi = Math.max(...proj), lo = Math.min(...proj);
       const k = Math.tan(p.CrownSlope * Math.PI / 180), ref = k > 0 ? hi : lo;
       crownH = Math.max(crownH, Math.abs(k) * (hi - lo) * 1.08 + 2);
@@ -196,7 +212,13 @@ const TowerGeom = (() => {
   }
 
   const DEFAULTS = { L: 120, W: 60, Sharp: 0.75, Gap: 20, CutAng: 25, H1: 360, H2: 270, FloorH: 4.2, Twist: -50,
-    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6, BaseScale: 1, Bulge: 0, BulgeZ: 120, TipR: 0 };
-  return { build, DEFAULTS, scaleAt };
+    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6, BaseScale: 1, Bulge: 0, BulgeZ: 120, TipR: 0, Shrink: 1 };
+  // полный набор параметров; у вариантов, сохранённых до появления Shrink, сужение — от центра
+  const withDefaults = (params) => {
+    const r = Object.assign({}, DEFAULTS, params);
+    if (params && Object.keys(params).length && !('Shrink' in params)) r.Shrink = 0;
+    return r;
+  };
+  return { build, DEFAULTS, scaleAt, withDefaults };
 })();
 if (typeof module !== 'undefined') module.exports = TowerGeom;

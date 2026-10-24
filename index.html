@@ -71,6 +71,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .slider label { font-size: 13.5px; }
 .slider output { font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
 .slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+.seg { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.seg span { flex-basis: 100%; }
+.seg label + label { margin-left: 10px; }
+.seg label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.seg input { accent-color: var(--accent); margin: 0; }
 .toggles label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
 .toggles input { accent-color: var(--accent); width: 16px; height: 16px; }
 dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13.5px; }
@@ -196,6 +201,10 @@ button.small.danger { border-color: #c24a3a; color: #c24a3a; }
       <span class="label">Профиль по высоте</span>
       <canvas id="profile" width="580" height="380" aria-label="Профиль ширины башен по высоте; точку можно перетаскивать"></canvas>
       <p class="note">Ширина — доля от плана «лимона», 100 % — край основания. Точку можно тянуть: вверх-вниз — высота, влево-вправо — расширение.</p>
+      <div class="seg" role="radiogroup" aria-label="Как сужаются этажи"><span>Сужение этажей</span>
+        <label><input type="radio" name="shrink" value="1"> от фасада</label>
+        <label><input type="radio" name="shrink" value="0"> от центра</label></div>
+      <p class="note" id="shrink-note"></p>
       <div class="slider"><label for="p-BaseScale">Ширина внизу</label><output id="o-BaseScale"></output><input type="range" id="p-BaseScale" min="60" max="130" step="1"></div>
       <div class="slider"><label for="p-Taper">Ширина наверху</label><output id="o-Taper"></output><input type="range" id="p-Taper" min="40" max="150" step="1"></div>
       <div class="slider"><label for="p-BulgeZ">Высота точки</label><output id="o-BulgeZ"></output><input type="range" id="p-BulgeZ" min="10" max="490" step="5"></div>
@@ -353,13 +362,28 @@ const TowerGeom = (() => {
 
   const cutAngle = (p, z) => (p.CutAng + p.Twist * (p.H1 > 0 ? z / p.H1 : 0)) * Math.PI / 180;
 
-  // сечение башни (sign +1 — башня 1 на севере, −1 — башня 2) на высоте z
+  const areaAt = (pts, n, c) => shoelace(clip(pts, n, c).map((q) => q[0]));
+
+  // сечение башни (sign +1 — башня 1 на севере, −1 — башня 2) на высоте z.
+  // Shrink 0 — «лимон» масштабируется от центра, наклоняются и фасад, и разрез.
+  // Shrink 1 — сужение уходит в разрыв: внешний фасад вертикален (контур не меньше, чем внизу),
+  // а кромка разреза отодвигается, пока площадь этажа не станет той же, что при масштабе от центра
   function section(p, sign, z, H) {
     const f = H > 0 ? Math.min(Math.max(z / H, 0), 1) : 0;
     const sc = scaleAt(p, f, H), th = cutAngle(p, z);
     const n = [-Math.sin(th) * sign, Math.cos(th) * sign], d = [Math.cos(th) * sign, Math.sin(th) * sign];
-    const c = 0.5 * p.Gap * sc + p.Inset * f;
-    const poly = clip(lemon(p, sc), n, c);
+    let c = 0.5 * p.Gap * sc + p.Inset * f, so = sc;
+    if (p.Shrink && sc < p.BaseScale) {
+      so = p.BaseScale;
+      const pts = lemon(p, so), target = areaAt(lemon(p, sc), n, c);
+      let lo = c, hi = Math.max(...pts.map((q) => q[0] * n[0] + q[1] * n[1]));
+      for (let it = 0; it < 28; it++) {
+        const mid = 0.5 * (lo + hi);
+        if (areaAt(pts, n, mid) > target) lo = mid; else hi = mid;
+      }
+      c = 0.5 * (lo + hi);
+    }
+    const poly = clip(lemon(p, so), n, c);
     if (poly.length < 3) return null;
     const area = shoelace(poly.map((q) => q[0]));
     let cut = -1;
@@ -386,12 +410,13 @@ const TowerGeom = (() => {
   }
 
   function tower(p, sign, H) {
-    // наклонный срез короны: выше на внешней стороне, дальше от разрыва. Наклон не урезается:
-    // если перепад среза не помещается в заданную высоту короны, корона становится выше
+    // наклонный срез короны: выше к внешнему носику, уклон — вдоль оси башни (север-юг), а не по
+    // закрученному разрезу, чтобы на обоих боковых фасадах угол был одинаковый при любой закрутке.
+    // Наклон не урезается: если перепад среза не помещается в высоту короны, корона становится выше
     let crownH = p.CrownH, planeZ = null;
     const topSec = p.CrownH > 0.5 ? section(p, sign, H, H) : null;
     if (topSec && Math.abs(p.CrownSlope) > 0.1) {
-      const n = topSec.n, proj = topSec.outer.map((q) => q[0] * n[0] + q[1] * n[1]);
+      const n = [0, sign], proj = topSec.outer.map((q) => q[0] * n[0] + q[1] * n[1]);
       const hi = Math.max(...proj), lo = Math.min(...proj);
       const k = Math.tan(p.CrownSlope * Math.PI / 180), ref = k > 0 ? hi : lo;
       crownH = Math.max(crownH, Math.abs(k) * (hi - lo) * 1.08 + 2);
@@ -434,8 +459,14 @@ const TowerGeom = (() => {
   }
 
   const DEFAULTS = { L: 120, W: 60, Sharp: 0.75, Gap: 20, CutAng: 25, H1: 360, H2: 270, FloorH: 4.2, Twist: -50,
-    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6, BaseScale: 1, Bulge: 0, BulgeZ: 120, TipR: 0 };
-  return { build, DEFAULTS, scaleAt };
+    Taper: 0.85, Inset: 5, CrownH: 20, CrownSlope: 15, Podium: 6, BaseScale: 1, Bulge: 0, BulgeZ: 120, TipR: 0, Shrink: 1 };
+  // полный набор параметров; у вариантов, сохранённых до появления Shrink, сужение — от центра
+  const withDefaults = (params) => {
+    const r = Object.assign({}, DEFAULTS, params);
+    if (params && Object.keys(params).length && !('Shrink' in params)) r.Shrink = 0;
+    return r;
+  };
+  return { build, DEFAULTS, scaleAt, withDefaults };
 })();
 if (typeof module !== 'undefined') module.exports = TowerGeom;
 
@@ -592,6 +623,15 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     document.getElementById('p-' + k).value = Math.round(paramValue / UNITS[k][2] * 1000) / 1000;
     showOut(k);
   }
+  const SHRINK_NOTE = ['Контур уменьшается к центру: наклоняются и внешний фасад, и закрученный разрез.',
+    'Внешний фасад остаётся вертикальным, сужение уходит в разрыв: наклоняются только закрученные плоскости. Площадь этажа — как у ширины на графике.'];
+  const shrinkInputs = document.querySelectorAll('input[name="shrink"]');
+  function syncShrink() {
+    shrinkInputs.forEach((el) => { el.checked = +el.value === (P.Shrink ? 1 : 0); });
+    document.getElementById('shrink-note').textContent = SHRINK_NOTE[P.Shrink ? 1 : 0];
+  }
+  shrinkInputs.forEach((el) => el.addEventListener('change', () => { P.Shrink = +el.value; syncShrink(); schedule(); }));
+  syncShrink();
   Object.keys(UNITS).forEach((k) => {
     const el = document.getElementById('p-' + k);
     setSlider(k, P[k]);
@@ -600,6 +640,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   document.getElementById('reset').addEventListener('click', () => {
     Object.assign(P, TowerGeom.DEFAULTS);
     Object.keys(UNITS).forEach((k) => setSlider(k, P[k]));
+    syncShrink();
     activeId = null; setBaseline({}); renderLib();
     schedule();
   });
@@ -619,24 +660,25 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
   let adminKey = store.get('bashni-admin-key', '');
   $('v-author').value = store.get('bashni-author', '');
 
+  // Shrink сохраняется всегда: вариант без него — сохранённый до режима «от фасада»
   function diffParams() {
     const d = {};
-    Object.keys(TowerGeom.DEFAULTS).forEach((k) => { if (Math.abs(P[k] - TowerGeom.DEFAULTS[k]) > 1e-9) d[k] = +P[k].toFixed(4); });
+    Object.keys(TowerGeom.DEFAULTS).forEach((k) => { if (k === 'Shrink' || Math.abs(P[k] - TowerGeom.DEFAULTS[k]) > 1e-9) d[k] = +P[k].toFixed(4); });
     return d;
   }
   function applyParams(params) {
-    Object.assign(P, TowerGeom.DEFAULTS);
-    Object.keys(params || {}).forEach((k) => { if (k in TowerGeom.DEFAULTS && isFinite(+params[k])) P[k] = +params[k]; });
+    const full = TowerGeom.withDefaults(params);
+    Object.keys(TowerGeom.DEFAULTS).forEach((k) => { P[k] = isFinite(+full[k]) ? +full[k] : TowerGeom.DEFAULTS[k]; });
     Object.keys(UNITS).forEach((k) => setSlider(k, P[k]));
+    syncShrink();
     schedule();
   }
   let baseline = {};
   function normParams(o) {
-    const r = {};
-    Object.keys(o || {}).sort().forEach((k) => {
-      if (!(k in TowerGeom.DEFAULTS)) return;
-      const v = +(+o[k]).toFixed(4);
-      if (Math.abs(v - TowerGeom.DEFAULTS[k]) > 1e-9) r[k] = v;
+    const r = {}, full = TowerGeom.withDefaults(o);
+    Object.keys(TowerGeom.DEFAULTS).sort().forEach((k) => {
+      const v = +(+full[k]).toFixed(4);
+      if (k === 'Shrink' || Math.abs(v - TowerGeom.DEFAULTS[k]) > 1e-9) r[k] = v;
     });
     return r;
   }
@@ -681,9 +723,9 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
     catch (e) { fallback(); }
   }
   const summary = (params) => {
-    const v = Object.assign({}, TowerGeom.DEFAULTS, params);
+    const v = TowerGeom.withDefaults(params);
     const bulge = v.Bulge ? ` · ${v.Bulge > 0 ? '+' : ''}${Math.round(v.Bulge * 100)}% на ${Math.round(v.BulgeZ)} м` : '';
-    return `${Math.round(v.H1)}/${Math.round(v.H2)} м · ${Math.round(v.Twist)}° · разрыв ${Math.round(v.Gap)}${bulge}`;
+    return `${Math.round(v.H1)}/${Math.round(v.H2)} м · ${Math.round(v.Twist)}° · разрыв ${Math.round(v.Gap)}${bulge}${v.Shrink ? '' : ' · от центра'}`;
   };
   const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
@@ -698,7 +740,7 @@ if (typeof module !== 'undefined') module.exports = TowerGeom;
       thumbR = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
       thumbR.setPixelRatio(1); thumbR.setSize(240, 320, false);
     }
-    const built = buildModel(Object.assign({}, TowerGeom.DEFAULTS, params), false);
+    const built = buildModel(TowerGeom.withDefaults(params), false);
     thumbScene.background = new THREE.Color(css('--scene') || '#9aa1aa');
     thumbScene.add(built.group);
     fitOrtho(thumbCam, new THREE.Box3().setFromObject(built.group), [1, 1.15, 1], 240 / 320, 1.05);
