@@ -714,6 +714,27 @@ const SITE_CONTEXT = { minZ: -16.92, v: [94.33,-33.48,-16.92,85.03,-42.59,-16.92
     pod: mat(0xb9cdd7), roof: mat(0x6f8f5a), ctx: mat(0xa39b8b), slab: mat(0x9aa0a6) };
   // фасады главного вида — свои копии: в режиме «стекло» полупрозрачные (миниатюры остаются непрозрачными)
   const MAIN = { t1: MAT.t1.clone(), t2: MAT.t2.clone() };
+  // стекло главного вида: в лоб почти прозрачное, под углом — непрозрачнее и отражает (Френель);
+  // отражается маленькая панорама города с почти нулевым контрастом (Poly Haven, Canary Wharf, CC0)
+  function glassMat(color) {
+    const m = new THREE.MeshStandardMaterial({ color, roughness: 0.04, metalness: 0, transparent: true, depthWrite: false,
+      side: THREE.DoubleSide, envMapIntensity: 1.6, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <tonemapping_fragment>', `
+        float glassCos = abs(dot(normalize(vViewPosition), normal));
+        gl_FragColor.a = mix(0.12, 0.96, pow(1.0 - glassCos, 3.0));
+        #include <tonemapping_fragment>`);
+    };
+    return m;
+  }
+  const GLASS = { t1: glassMat(0x3c5c7c), t2: glassMat(0x426e54) };
+  const ENV_JPG = 'data:image/jpeg;base64,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';
+  new THREE.TextureLoader().load(ENV_JPG, (tex) => {
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    const pm = new THREE.PMREMGenerator(renderer), env = pm.fromEquirectangular(tex).texture;
+    pm.dispose(); tex.dispose();
+    Object.values(GLASS).forEach((m) => { m.envMap = env; m.needsUpdate = true; });
+  });
   MAT.glass = new THREE.MeshStandardMaterial({ color: 0xd2ebf5, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.75,
     side: THREE.DoubleSide });
   const lineMat = new THREE.LineBasicMaterial({ color: 0x2a3036, transparent: true, opacity: 0.35 });
@@ -816,13 +837,15 @@ const SITE_CONTEXT = { minZ: -16.92, v: [94.33,-33.48,-16.92,85.03,-42.59,-16.92
     r.towers.forEach((t, ti) => {
       const m = withLines ? (ti === 0 ? MAIN.t1 : MAIN.t2) : (ti === 0 ? MAT.t1 : MAT.t2);
       // низ с рёбрами — своей сеткой, выше — полосы между сечениями; низ закрыт сеткой рёбер
-      if (t.ribs) group.add(creaseMesh(t.ribs.verts, t.ribs.tris, 22, m));
+      // фасады главного вида помечены: переключатель «стекло» меняет им материал
+      const tag = (o) => { if (withLines) o.userData.tw = ti === 0 ? 't1' : 't2'; return o; };
+      if (t.ribs) group.add(tag(creaseMesh(t.ribs.verts, t.ribs.tris, 22, m)));
       if (t.body.length > 1) {
         const outerR = t.body.map((s) => ({ pts: s.outer, z: s.z }));
         const innerR = t.body.map((s) => ({ pts: s.inner, z: s.z }));
         const top = t.body[t.body.length - 1], parts = [stripMesh(outerR), stripMesh(innerR), capMesh(ring(top), top.z)];
         if (!t.ribs) parts.push(capMesh(ring(t.body[0]), t.body[0].z));
-        group.add(toMesh(parts, m));
+        group.add(tag(toMesh(parts, m)));
       }
       if (t.crown.length > 1) {
         const zf = t.crown.planeZ ? (q, z) => Math.min(z, t.crown.planeZ(q[0], q[1])) : null;
@@ -1264,9 +1287,7 @@ const SITE_CONTEXT = { minZ: -16.92, v: [94.33,-33.48,-16.92,85.03,-42.59,-16.92
     floors.forEach((o) => { o.visible = f; }); crowns.forEach((o) => { o.visible = c; });
     // стекло: фасады полупрозрачные, внутри видны плиты перекрытий
     const g = document.getElementById('t-glass').checked;
-    Object.values(MAIN).forEach((m) => {
-      if (m.transparent !== g) { m.transparent = g; m.opacity = g ? 0.55 : 1; m.depthWrite = !g; m.needsUpdate = true; }
-    });
+    model.traverse((o) => { if (o.userData.tw) o.material = g ? GLASS[o.userData.tw] : MAIN[o.userData.tw]; });
     slabs.forEach((o) => { o.visible = g; });
     const cx = !!context && document.getElementById('t-ctx').checked;
     if (context) context.visible = cx;
