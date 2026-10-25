@@ -18,18 +18,20 @@
   --scene: #9aa1aa;
   --ground: #b9bec5;
   --floor-line: #2a3036;
+  --context: #a39b8b;
+  --context-line: #4a4438;
   --font-body: "Golos Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #14181c; --panel: #1b2026; --fg: #e3e7eb; --muted: #97a1ab; --rule: #2c333a;
-    --accent: #e08a3c; --scene: #3a4048; --ground: #4a5058; --floor-line: #10141a; color-scheme: dark;
+    --accent: #e08a3c; --scene: #3a4048; --ground: #4a5058; --floor-line: #10141a; --context: #c2c3bd; --context-line: #1c2026; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #14181c; --panel: #1b2026; --fg: #e3e7eb; --muted: #97a1ab; --rule: #2c333a;
-  --accent: #e08a3c; --scene: #3a4048; --ground: #4a5058; --floor-line: #10141a; color-scheme: dark;
+  --accent: #e08a3c; --scene: #3a4048; --ground: #4a5058; --floor-line: #10141a; --context: #c2c3bd; --context-line: #1c2026; color-scheme: dark;
 }
 html, body { height: 100%; }
 [hidden] { display: none !important; }
@@ -706,10 +708,11 @@ const SITE_CONTEXT = { minZ: -16.92, v: [94.33,-33.48,-16.92,85.03,-42.59,-16.92
   const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide,
     polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
   const MAT = { t1: mat(0x96b4d2), t2: mat(0xa0c8aa), crown: mat(0xe6963c), base: mat(0xd7c8aa),
-    pod: mat(0xb9cdd7), roof: mat(0x6f8f5a) };
+    pod: mat(0xb9cdd7), roof: mat(0x6f8f5a), ctx: mat(0xa39b8b) };
   MAT.glass = new THREE.MeshStandardMaterial({ color: 0xd2ebf5, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.75,
     side: THREE.DoubleSide });
   const lineMat = new THREE.LineBasicMaterial({ color: 0x2a3036, transparent: true, opacity: 0.35 });
+  const ctxLineMat = new THREE.LineBasicMaterial({ color: 0x4a4438, transparent: true, opacity: 0.6 });
 
   const groundMat = new THREE.MeshStandardMaterial({ color: 0xb9bec5, roughness: 1, side: THREE.FrontSide });
   const ground = new THREE.Mesh(new THREE.CircleGeometry(520, 96), groundMat);
@@ -797,7 +800,9 @@ const SITE_CONTEXT = { minZ: -16.92, v: [94.33,-33.48,-16.92,85.03,-42.59,-16.92
     const v = SITE_CONTEXT.v, t = SITE_CONTEXT.t, verts = [], tris = [];
     for (let i = 0; i < v.length; i += 3) verts.push([v[i], v[i + 1], v[i + 2]]);
     for (let i = 0; i < t.length; i += 3) tris.push([t[i], t[i + 1], t[i + 2]]);
-    context = creaseMesh(verts, tris, 30, mat(0xc2c3bd));
+    context = creaseMesh(verts, tris, 30, MAT.ctx);
+    // контур рёбер стилобата — чтобы форма читалась и на светлой земле
+    context.add(new THREE.LineSegments(new THREE.EdgesGeometry(context.geometry, 30), ctxLineMat));
     scene.add(context);
   }
   function buildModel(p, withLines) {
@@ -1258,6 +1263,8 @@ const SITE_CONTEXT = { minZ: -16.92, v: [94.33,-33.48,-16.92,85.03,-42.59,-16.92
     scene.background = new THREE.Color(css('--scene') || '#9aa1aa');
     groundMat.color.set(css('--ground') || '#b9bec5');
     lineMat.color.set(css('--floor-line') || '#2a3036');
+    MAT.ctx.color.set(css('--context') || '#a39b8b');
+    ctxLineMat.color.set(css('--context-line') || '#4a4438');
     arrowMat.color.set(css('--accent') || '#c9711f');
   }
   applyTheme();
