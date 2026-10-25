@@ -227,8 +227,10 @@ const TowerGeom = (() => {
     };
     const nodes = [];
     for (let j = Math.floor((s0 - off) / step) - 1; j <= Math.ceil((s1 - off) / step); j++) {
-      const w = width(j), a0 = 1 - w, pts = [[0, 0]];
-      if (a0 > 0.53) pts.push([0.5, 0]);
+      // гладкий фасад между зубьями — узлы почаще (шестая часть шага), иначе он бьётся на грани
+      const w = width(j), a0 = 1 - w, pts = [];
+      for (let k = 0; k < 6 && k / 6 < a0 - 0.03; k++) pts.push([k / 6, 0]);
+      if (!pts.length) pts.push([0, 0]);
       if (w > 0.02) {
         if (a0 > 0.03) pts.push([a0, 0]);
         pts.push([a0 + w * 0.5 * asym, 0.5], [a0 + w * asym, 1]);
